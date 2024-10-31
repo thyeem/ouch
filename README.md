@@ -6,10 +6,14 @@
 
 _Odd Utiltiy Collection Hub_.
 
-`ouch` is _a struggle_ of a minimalist who doesn't want to use _unintuitive and complex_ utilities.  
-`ouch` respects the `Python` standard library and only depends on [`foc`](https://github.com/thyeem/foc).
+What happens _useless ideas_ meet an [odd tool](https://github.com/thyeem/foc)?  
+The problem is that _useless thoughts just keep growing_.
 
-## Install
+
+
 ```bash
 $ pip install -U ouch
+```
+```python
+from ouch import *
 ```

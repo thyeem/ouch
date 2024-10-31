@@ -19,7 +19,7 @@ from threading import Thread, Timer
 
 from foc import *
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 __all__ = [
     "HOME",
@@ -141,15 +141,15 @@ def _lazy_iterp(x):
 
 def _ns_iterp(x):
     """Check if the given ``x`` is a non-string-like iterable."""
-    return (
-        isinstance(x, Iterable)
-        and not isinstance(x, dict)
-        and not isinstance(x, (str, bytes, bytearray))
-    )
+    return isinstance(x, Iterable) and not isinstance(x, (str, bytes, bytearray))
+
+
+def _ns_builtin_iterp(x):
+    return isinstance(x, (list, tuple, set, frozenset, dict, range, memoryview))
 
 
 class dmap(dict):
-    """Dot-accessible dict(map).
+    """Dot-accessible map or ``dict``.
 
     >>> dmap()
     {}
@@ -209,7 +209,7 @@ class dmap(dict):
                 if k not in o or not isinstance(o[k], dmap):
                     o[k] = dmap()
                 o = o[k]
-            o[path[-1]] = dmap._v(val)  # put leaf
+            o[path[-1]] = dmap.__val__(val)  # put leaf
 
         def __bool__(self):
             return False
@@ -223,17 +223,17 @@ class dmap(dict):
     def __init__(self, /, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for key, val in self.items():
-            self[key] = self._v(val)
+            self[key] = self.__val__(val)
 
     @classmethod
-    def _v(cls, val):
+    def __val__(cls, val):
         if isinstance(val, dict) and not isinstance(val, dmap):
             return dmap(val)
-        elif _ns_iterp(val):
-            return [cls._v(x) for x in val]
+        elif _ns_builtin_iterp(val):
+            return [cls.__val__(x) for x in val]
         return val
 
-    def _k(self, key):
+    def __key__(self, key):
         if self.__class__.__dwim__:  # dmap using the DWIM key
             for s in self.__class__.__dwim__:
                 k = re.sub("_", s, key)
@@ -243,23 +243,37 @@ class dmap(dict):
 
     def __getattr__(self, key):
         if key not in self and key != "_ipython_canary_method_should_not_exist_":
-            k = self._k(key)
+            k = self.__key__(key)
             return self[k] if k in self else self.node(self, key)
         return self[key]
 
     def __setattr__(self, key, val):
         if key.startswith("__"):  # disabled for stability
             return
-        self[self._k(key)] = self._v(val)
+        self[self.__key__(key)] = self.__val__(val)
 
     def __delattr__(self, key):
-        key = key if key in self else self._k(key)
+        key = key if key in self else self.__key__(key)
         if key in self:
             del self[key]
 
+    def __or__(self, o):
+        if type(o) is fx:
+            return o(self)
+        else:
+            return dmap(super().__or__(o))
 
-def neatly(__, _cols=None, _width=10000, _repr=False, _sort=True, _root=True):
-    """Create neatly formatted string for data structure of ``dict`` and ``list``."""
+    def __ror__(self, o):
+        return dmap(super().__or__(o))
+
+    def __ior__(self, o):
+        self.update(o)
+        return self
+
+
+@fx
+def neatly(d, _cols=None, _width=10000, _repr=False, _sort=True, _root=True):
+    """Create neatly formatted strings for instances of builtin iterables."""
 
     def indent(x, i):
         def u(c, j=0):
@@ -278,7 +292,7 @@ def neatly(__, _cols=None, _width=10000, _repr=False, _sort=True, _root=True):
     def bullet(o, s):
         return (
             (indent(x, i) for i, x in enumerate(s))
-            if _ns_iterp(o)
+            if _ns_builtin_iterp(o) and not isinstance(o, dict)
             else (f":  {x}" if i else f"|  {x}" for i, x in enumerate(s))
         )
 
@@ -292,13 +306,13 @@ def neatly(__, _cols=None, _width=10000, _repr=False, _sort=True, _root=True):
             subsequent_indent=subsequent,
         )
 
-    if isinstance(__, dict):
-        if not __:
+    if isinstance(d, dict):
+        if not d:
             return ""
-        _cols = _cols or max(map(len, __.keys()))
+        _cols = _cols or max(map(len, d.keys()))
         return unlines(
             filine(v, _width, f"{k:>{_cols}}  ", f"{' ':>{_cols}}     ")
-            for a, o in (sort if _sort else id)(__.items())
+            for a, o in (sort if _sort else id)(d.items())
             for k, v in [
                 ("", b) if i else (a, b)
                 for i, b in enumerate(
@@ -306,22 +320,31 @@ def neatly(__, _cols=None, _width=10000, _repr=False, _sort=True, _root=True):
                 )
             ]
         )
-    elif _ns_iterp(__):
+    elif _ns_builtin_iterp(d):
         if _root:
-            return neatly({"'": __}, _repr=_repr, _root=False)
+            return neatly({"'": d}, _repr=_repr, _root=False)
         return unlines(
             filine(v, _width, "", "   ")
-            for o in __
+            for o in d
             for v in bullet(o, lines(neatly(o, _repr=_repr, _root=False)))
         )
     else:
-        return (repr if _repr else str)(__)
+        return (repr if _repr else str)(d)
 
 
 @fx
-def nprint(__, *, _cols=None, _width=10000, _repr=False, _sort=True):
-    """Neatly print data structures of '`dict`' and ``list`` using ``neatly``."""
-    print(neatly(__, _cols=_cols, _width=_width, _repr=_repr, _sort=_sort))
+def nprint(d, *, _cols=None, _width=10000, _repr=False, _sort=True):
+    """Print neatly formatted strings of the builtin iterables by ``neatly``.
+
+    >>> import torch                                 # doctest: +SKIP
+    >>> torch.nn.Linear(3,5).state_dict() | nprint   # doctest: +SKIP
+
+    >>> map(_ * 7)(seq(5,...)) | take(3) | nprint
+    '  +  35
+       -  42
+       -  49
+    """
+    print(neatly(d, _cols=_cols, _width=_width, _repr=_repr, _sort=_sort))
 
 
 def HOME():
@@ -330,7 +353,7 @@ def HOME():
 
 
 def cd(path=None):
-    """Change directories: similar to the shell-command ``cd``."""
+    """Change directories: similar to the shell command ``cd``."""
     if path:
         os.chdir(normpath(path, abs=True))
     else:
@@ -339,7 +362,7 @@ def cd(path=None):
 
 
 def pwd():
-    """Get the current directory: similar to the shell-command ``pwd``."""
+    """Get the current directory: similar to the shell command ``pwd``."""
     return os.getcwd()
 
 
@@ -406,7 +429,7 @@ def ls(
     Glob patterns `(*,?,[)` in `<path..>` are allowed.
     Given ``grep=<regex>``, it behaves like ``ls -1 <path..> | grep <regex>``
     +--------+----------------------------------------------+------------------+
-    | Option | Description                                  | In shell        d|
+    | Option | Description                                  | In shell         |
     +--------+----------------------------------------------+------------------+
     | ``a``  | lists hidden files (dotfiles)                | ``ls -a``        |
     +--------+----------------------------------------------+------------------+
@@ -420,6 +443,46 @@ def ls(
     +--------+----------------------------------------------+------------------+
     | ``g``  | returns a generator instead of a sorted list |        -         |
     +--------+----------------------------------------------+------------------+
+
+    Getting content of the current directory,
+    >>> ls()                  # doctest: +SKIP
+
+    Expands "~" automatically,
+    >>> ls("~")               # doctest: +SKIP
+
+    Lists hidden files, (starting with ".", dotfiles)
+    >>> ls(a=True)            # doctest: +SKIP
+
+    Available multiple filepaths,
+    >>> ls(FILE, DIR, ...)    # doctest: +SKIP
+
+    Supports glob patterns, (``*``, ``?``, ``[``)
+    >>> ls("./*/*.py")
+    ['ouch/__init__.py']
+
+    Lists ``.git`` directory recursively and pick files ending with digits,
+    >>> ls(".git", r=True, grep="\\d$")      # doctest: +SKIP
+
+    Only files in `'.git`' directory,
+    >>> ls(".git", r=True, f=True)           # doctest: +SKIP
+
+    Only directories in '`.git`' directory,
+    >>> ls(".git", r=True, d=True)           # doctest: +SKIP
+
+    Search recursivley, then match patterns with `grep`.
+    `'i=True'` for case-insensitive grep pattern.
+    >>> ls(".", r=True, i=True, grep=".PY")  # doctest: +SKIP
+
+    In more convenient way,
+    >>> ls(".", r=True, grep=".py$")         # doctest: +SKIP
+
+    Found the location of the current file.
+    >>> ls(".", r=True, grep="^(ouch).*py$")
+    ['ouch/__init__.py']
+
+    Same as above,
+    >>> ls("ouch/*.py")
+    ['ouch/__init__.py']
     """
     paths = paths or ["."]
     typef = f and f ^ d
@@ -492,9 +555,9 @@ def shell(cmd, sync=True, o=True, *, executable="/bin/bash"):
     | otherwise | ``None``  | do nothing or redirection (``2>&1 or &>FILE``) |
     +-----------+-----------+------------------------------------------------+
 
-    >>> shell("ls -1 ~")                   # doctest: +SKIP
-    >>> shell("find . | sort" o=-1)        # doctest: +SKIP
-    >>> shell("cat *.md", o=writer(FILE))  # doctest: +SKIP
+    >>> shell("ls -1 ~")                     # doctest: +SKIP
+    >>> shell("find . | sort" o=-1)          # doctest: +SKIP
+    >>> shell("cat *.md", o=writer(FILE))    # doctest: +SKIP
     """
     import shlex
 
@@ -520,12 +583,16 @@ def shell(cmd, sync=True, o=True, *, executable="/bin/bash"):
 
 @fx
 def pbcopy(x):
-    """Copy text to the clipboard (``macOS`` only)"""
+    """Copy text to the clipboard. (``macOS`` only)
+
+    >>> "Long Long string ..." | pbcopy
+    >>> dict(sofia="piano", maria="violin") | neatly | pbcopy
+    """
     Popen("pbcopy", stdin=PIPE).communicate(x.encode())
 
 
 def pbpaste():
-    """Paste text from the clipboard (``macOS`` only)"""
+    """Paste text from the clipboard. (``macOS`` only)"""
     return Popen("pbpaste", stdout=PIPE).stdout.read().decode()
 
 
@@ -697,7 +764,15 @@ def randint(x=None, high=None, size=None):
 
 
 @fx
-def probify(fn, p=None):
+def probify(fn, p=0.5):
+    """Conditionally applies a function based on a probability, ``p``.
+
+    Coin flipping:
+    >>> probify(p=0.5)(const("H"))("T")     # doctest: +SKIP
+
+    Russian Roulette:
+    >>> probify(p=1/6)(fire_gun)("bullet")  # doctest: +SKIP
+    """
     return fn if rand() < p else id
 
 
@@ -730,14 +805,12 @@ def choice(x, size=None, *, replace=False, p=None):
 
     def with_size(size):
         size = int(len(x) * size) if 0 < size < 1 else size
-        return [
-            x[i]
-            for i in (
-                randint(0, len(x), size)
-                if replace or len(x) < size
-                else shuffle(rangel(len(x)))[:size]
-            )
-        ]
+        indices = (
+            randint(0, len(x), size)
+            if replace or len(x) < size
+            else shuffle(rangel(len(x)))[:size]
+        )
+        return [x[i] for i in indices]
 
     if not len(x):
         return x
@@ -875,11 +948,30 @@ def timestamp(*, origin=None, w=0, d=0, h=0, m=0, s=0, from_iso=None, to_iso=Fal
     return to_iso and f"{datetime.fromtimestamp(t).isoformat()[:26]}Z" or t
 
 
-def taskbar(x=None, desc="working", *, start=0, total=None, barcolor="white", **kwargs):
-    """flexible tqdm-like progress bar relying on ``pip`` package only"""
+def taskbar(x=None, desc="", *, start=0, total=None, barcolor="white", **kwargs):
+    """flexible tqdm-like progress bar relying on ``pip`` package only
+
+    With iterables,
+    >>> for _ in taskbar(range(100), "training model"):    # doctest: +SKIP
+    ...     time.sleep(0.05)
+
+    Or generators with ``total=LENGTH``,
+    >>> g = (x for x in range(100))
+    >>> for _ in taskbar(g, "training model", total=100):  # doctest: +SKIP
+    ...     time.sleep(0.05)
+
+    Manually update with multiple tasks,
+    >>> with taskbar() as tb:                              # doctest: +SKIP
+    ...     task1 = tb.add_task("[red] train-critic", total=50)
+    ...     task2 = tb.add_task("[green] reinforce", total=70)
+    ...     while not tb.finished:
+    ...         time.sleep(0.05)
+    ...         tb.update(task1, advance=0.5)
+    ...         tb.update(task2, advance=1)
+    """
     import pip._vendor.rich.progress as rp
 
-    class SpeedColumn(rp.ProgressColumn):
+    class JobSpeedColumn(rp.ProgressColumn):
         def render(self, task) -> rp.Text:
             if task.speed is None:
                 return rp.Text("?", style="progress.data.speed")
@@ -893,8 +985,8 @@ def taskbar(x=None, desc="working", *, start=0, total=None, barcolor="white", **
                 guard(total is not None, f"taskbar: not subscriptable: {x}")
                 start = total + start if start < 0 else start
                 x = islice(x, start, None)
-                task = tb.add_task(desc, completed=start, total=total)
-                yield from tb.track(x, task_id=task, total=total, description=desc)
+            task = tb.add_task(desc, completed=start, total=total)
+            yield from tb.track(x, task_id=task, total=total, description=desc)
             if total:
                 tb._tasks.get(task).completed = total
 
@@ -911,7 +1003,7 @@ def taskbar(x=None, desc="working", *, start=0, total=None, barcolor="white", **
         "<",
         rp.TimeRemainingColumn(),
         "",
-        SpeedColumn(),
+        JobSpeedColumn(),
         **kwargs,
     )
     return tb if x is None else track(tb, x, start, total)
