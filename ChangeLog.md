@@ -13,3 +13,6 @@
 - Added `prompt` and `tmpfile`.
 - Added `base58e` and `base58d`.
 - Added `getext` and `stripext`.
+
+# 0.0.5
+- Fix `taskbar`, thread-safe and nested progress-bar without boilerplates.

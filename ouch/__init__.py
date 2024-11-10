@@ -1,25 +1,26 @@
+import multiprocessing
 import operator as op
 import os
 import random as rd
 import re
 import sys
 import termios
+import threading
 import time
 import tty
 import zipfile
 from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from glob import glob
 from io import BytesIO, StringIO
-from multiprocessing import Pool, Process
 from shutil import rmtree
 from subprocess import DEVNULL, PIPE, STDOUT, Popen
 from textwrap import fill
-from threading import Thread, Timer
 
 from foc import *
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 
 __all__ = [
     "HOME",
@@ -778,7 +779,7 @@ def bin_to_bytes(x):
 
 
 def randbytes(n):
-    """generate cryptographically secure random bytes"""
+    """Generate cryptographically secure random bytes"""
     return os.urandom(n)
 
 
@@ -883,7 +884,7 @@ def choice(x, size=None, *, replace=False, p=None):
 
 
 def singleton(cls):
-    """decorate a class and make it a singleton class."""
+    """Decorate a class and make it a singleton class."""
     o = {}
 
     def go(*args, **kwargs):
@@ -895,7 +896,7 @@ def singleton(cls):
 
 
 def thread(daemon=False):
-    """decorator factory that turns functions into threading.Thread.
+    """Decorator factory that turns functions into threading.Thread.
 
     >>> mouse = thread()(mouse_listener)()  # doctest: +SKIP
     >>> mouse.start()                       # doctest: +SKIP
@@ -904,7 +905,12 @@ def thread(daemon=False):
 
     def t(f):
         def go(*args, **kwargs):
-            return Thread(target=f, args=args, kwargs=kwargs, daemon=daemon)
+            return threading.Thread(
+                target=f,
+                args=args,
+                kwargs=kwargs,
+                daemon=daemon,
+            )
 
         return go
 
@@ -912,7 +918,7 @@ def thread(daemon=False):
 
 
 def proc(daemon=False):
-    """decorator factory that turns functions into multiprocessing.Process.
+    """Decorator factory that turns functions into multiprocessing.Process.
 
     >>> ps = [proc(True)(bruteforce)(x) for x in xs]  # doctest: +SKIP
     >>> for p in ps: p.start()                        # doctest: +SKIP
@@ -921,7 +927,12 @@ def proc(daemon=False):
 
     def p(f):
         def go(*args, **kwargs):
-            return Process(target=f, args=args, kwargs=kwargs, daemon=daemon)
+            return multiprocessing.Process(
+                target=f,
+                args=args,
+                kwargs=kwargs,
+                daemon=daemon,
+            )
 
         return go
 
@@ -929,7 +940,7 @@ def proc(daemon=False):
 
 
 def parmap(f, x, *xs, workers=None):
-    """easily parallelizes function applications over iterables
+    """Parallelizes function applications over iterables
     by utilizing multiple cpu cores with ``multiprocessing.Pool``.
     In the same way as ``map``, it very simply maps a function over
     an iterable and executes it in parallel.
@@ -938,14 +949,14 @@ def parmap(f, x, *xs, workers=None):
     >>> parmap(os.remove, manyFiles)   # doctest: +SKIP
     """
     workers = workers or os.cpu_count()
-    with Pool(workers) as pool:
+    with multiprocessing.Pool(workers) as pool:
         x = zip(x, *xs) if xs else x
         mapper = pool.starmap if xs else pool.map
         return mapper(f, x)
 
 
 class polling:
-    """repeatedly executes a provided function at fixed time intervals.
+    """Repeatedly executes a provided function at fixed time intervals.
 
     >>> g = f_(cf_(print, force), lazy(randint, 100))  # doctest: +SKIP
     >>> p = polling(1, g)                              # doctest: +SKIP
@@ -954,7 +965,7 @@ class polling:
 
     def __init__(self, sec, f, *args, **kwargs):
         self.expr = lazy(f, *args, **kwargs)
-        self.timer = f_(Timer, sec, self._g)
+        self.timer = f_(threading.Timer, sec, self._g)
         self.on = False
         self.t = None
 
@@ -1008,26 +1019,35 @@ def timestamp(*, origin=None, w=0, d=0, h=0, m=0, s=0, from_iso=None, to_iso=Fal
     return to_iso and f"{datetime.fromtimestamp(t).isoformat()[:26]}Z" or t
 
 
-def taskbar(x=None, desc="", *, start=0, total=None, barcolor="white", **kwargs):
-    """flexible tqdm-like progress bar relying on ``pip`` package only
+_lock = threading.Lock()
 
-    With iterables,
-    >>> for _ in taskbar(range(100), "training model"):    # doctest: +SKIP
-    ...     time.sleep(0.05)
 
-    Or generators with ``total=LENGTH``,
+def taskbar(it, description="", total=None, barcolor="white", **kwargs):
+    """Create a thread-safe progress bar with support for nested loops.
+
+    ``taskbar`` wraps ``rich.progress`` from pip's bundle to provide
+    a simpler interface for creating progress bars, with column formats
+    very similar to ``tqdm``.
+
+    - Supports nested progress bars without 'additional boilerplate code'
+    - Allowing use in multi-thread environments
+
+    Refer to ``rich.progress`` as all keywords follow its conventions.
+
+    # single progress bar
+    >>> for batch in taskbar(dataloader, "training"):  # doctest: +SKIP
+    ...     model(batch)
+
+    # nested progress bars
+    >>> for i in taskbar(range(10), "outer"):          # doctest: +SKIP
+    ...     time.sleep(0.02)
+    ...     for j in taskbar(range(20), "inner"):
+    ...         time.sleep(0.02)
+
+    # generator with known length
     >>> g = (x for x in range(100))
-    >>> for _ in taskbar(g, "training model", total=100):  # doctest: +SKIP
-    ...     time.sleep(0.05)
-
-    Manually update with multiple tasks,
-    >>> with taskbar() as tb:                              # doctest: +SKIP
-    ...     task1 = tb.add_task("[red] train-critic", total=50)
-    ...     task2 = tb.add_task("[green] reinforce", total=70)
-    ...     while not tb.finished:
-    ...         time.sleep(0.05)
-    ...         tb.update(task1, advance=0.5)
-    ...         tb.update(task2, advance=1)
+    >>> for item in taskbar(g, "task", total=100)      # doctest: +SKIP
+    ...     process(item)
     """
     import pip._vendor.rich.progress as rp
 
@@ -1037,36 +1057,54 @@ def taskbar(x=None, desc="", *, start=0, total=None, barcolor="white", **kwargs)
                 return rp.Text("?", style="progress.data.speed")
             return rp.Text(f"{task.speed:2.2f} it/s", style="progress.data.speed")
 
-    def track(tb, x, start, total):
-        with tb:
-            if total is None:
-                total = len(x) if float(op.length_hint(x)) else None
-            if start:
-                guard(total is not None, f"taskbar: not subscriptable: {x}")
-                start = total + start if start < 0 else start
-                x = islice(x, start, None)
-            task = tb.add_task(desc, completed=start, total=total)
-            yield from tb.track(x, task_id=task, total=total, description=desc)
-            if total:
-                tb._tasks.get(task).completed = total
+    @contextmanager
+    def create(barcolor=barcolor, **kwargs):
+        prog = rp.Progress(
+            "[progress.description]{task.description}",
+            "",
+            rp.TaskProgressColumn(),
+            "",
+            rp.BarColumn(complete_style=barcolor, finished_style=barcolor),
+            "",
+            rp.MofNCompleteColumn(),
+            "",
+            rp.TimeElapsedColumn(),
+            "<",
+            rp.TimeRemainingColumn(),
+            "",
+            JobSpeedColumn(),
+            **kwargs,
+        )
+        local.stack.append(prog)
+        local.head = prog
+        try:
+            with prog:
+                yield prog
+        finally:
+            local.stack.pop()
+            local.head = local.stack[-1] if local.stack else None
 
-    tb = rp.Progress(
-        "[progress.description]{task.description}",
-        "",
-        rp.TaskProgressColumn(),
-        "",
-        rp.BarColumn(complete_style=barcolor, finished_style=barcolor),
-        "",
-        rp.MofNCompleteColumn(),
-        "",
-        rp.TimeElapsedColumn(),
-        "<",
-        rp.TimeRemainingColumn(),
-        "",
-        JobSpeedColumn(),
-        **kwargs,
-    )
-    return tb if x is None else track(tb, x, start, total)
+    if not hasattr(taskbar, "local"):
+        taskbar.local = threading.local()
+    local = taskbar.local
+    if not hasattr(local, "stack"):
+        local.stack = []
+        local.head = None
+    if total is None:
+        total = len(it) if float(op.length_hint(it)) else None
+
+    if local.head is None:
+        with _lock:
+            with create(barcolor=barcolor, **kwargs) as tb:
+                task = tb.add_task(description, total=total)
+                for item in tb.track(it, task_id=task):
+                    yield item
+    else:
+        tb = local.head
+        task = tb.add_task(description, total=total)
+        for item in tb.track(it, task_id=task):
+            yield item
+        tb.remove_task(task)
 
 
 _BASE58_CHARS = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
