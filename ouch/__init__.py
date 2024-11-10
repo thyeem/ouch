@@ -19,11 +19,13 @@ from threading import Thread, Timer
 
 from foc import *
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 
 __all__ = [
     "HOME",
     "basename",
+    "base58d",
+    "base58e",
     "bin_to_bytes",
     "bytes_to_bin",
     "bytes_to_int",
@@ -42,6 +44,7 @@ __all__ = [
     "flat",
     "flatl",
     "flatten",
+    "getext",
     "grep",
     "int_to_bytes",
     "ls",
@@ -55,6 +58,7 @@ __all__ = [
     "polling",
     "probify",
     "proc",
+    "prompt",
     "pwd",
     "rand",
     "randbytes",
@@ -66,10 +70,12 @@ __all__ = [
     "shell",
     "shuffle",
     "singleton",
+    "stripext",
     "taskbar",
     "thread",
     "timer",
     "timestamp",
+    "tmpfile",
     "writer",
 ]
 
@@ -338,6 +344,7 @@ def nprint(d, *, _cols=None, _width=10000, _repr=False, _sort=True):
 
     >>> import torch                                 # doctest: +SKIP
     >>> torch.nn.Linear(3,5).state_dict() | nprint   # doctest: +SKIP
+    >>> catalog() | nprint                           # doctest: +SKIP
 
     >>> map(_ * 7)(seq(5,...)) | take(3) | nprint
     '  +  35
@@ -367,7 +374,7 @@ def pwd():
 
 
 def normpath(path, abs=False):
-    """Normalize the given filepath"""
+    """Normalize and expand a givien filepath, ``path``."""
     return cf_(
         os.path.abspath if abs else id,
         os.path.normpath,
@@ -376,7 +383,7 @@ def normpath(path, abs=False):
 
 
 def exists(path, kind=None):
-    """Check if the given filepath (file or directory) is available."""
+    """Check if a given filpath ``path`` exists."""
     path = normpath(path)
     if kind == "f":
         return os.path.isfile(path)
@@ -387,6 +394,9 @@ def exists(path, kind=None):
 
 
 def dirname(*args, prefix=False, abs=False):
+    """Get the directory name of a filepath.
+    If multiple filepaths are provided, returns common directory among them.
+    """
     if len(args) > 1:
         args = [normpath(a, abs=True) for a in args]
         return os.path.commonprefix(args) if prefix else os.path.commonpath(args)
@@ -397,21 +407,51 @@ def dirname(*args, prefix=False, abs=False):
 
 
 def basename(path):
+    """Get the base name of a filepath."""
     return cf_(os.path.basename, normpath)(path)
 
 
 def mkdir(path, mode=0o755):
+    """Create a directory and any necessary parent directories."""
     path = normpath(path)
     os.makedirs(path, mode=mode, exist_ok=True)
     return path
 
 
 def rmdir(path, rm_rf=False):
+    """Remove a directory.
+    If ``rm_rf`` is set, remove directory and all its contents.
+    """
     path = normpath(path)
     if rm_rf:
         rmtree(path)
     else:
         os.removedirs(path)
+
+
+def stripext(path, sep="."):
+    """Remove the file extension from a filepath, ``path``."""
+    o = path.split(sep)
+    return unchars(o[:-1] if len(o) > 1 else o)
+
+
+def getext(path, sep="."):
+    """Get the file extension from a filepath, ``path``."""
+    o = path.split(sep)
+    return o[-1] if len(o) > 1 else None
+
+
+def tmpfile(prefix=None, suffix=None, dir="/tmp", size=6, encoder=bytes.hex):
+    """Generate a temporary filepath.
+
+    >>> tmpfile(dir=f"{HOME()}/ouch", size=8)              # doctest: +SKIP
+    >>> tmpfile(suffix=".key", size=128, encoder=base58e)  # doctest: +SKIP
+    """
+    mkdir(dir)
+    return (
+        f"{normpath(dir, abs=True)}/"
+        f"{prefix or ''}{encoder(randbytes(size))}{suffix or ''}"
+    )
 
 
 def ls(
@@ -683,6 +723,26 @@ def readchar():
         return sys.stdin.read(1)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def prompt(prompt, ok=void, fail=void):
+    """Display a yes-or-no prompt and execute corresponding function
+    based on user input.
+    Execute lazy function `ok` if user inputs ``y`` or ``Y``.
+    Execute lazy function `fail` if user inputs anything else.
+
+    >>> prompt(
+    ...     f"{model}" exist. Are you sure to proceed?",
+    ...     fail=lazy(error, f"Will not overwrite {model}."),
+    ... )    # doctest: +SKIP
+    """
+    print(f"{prompt} [y/N] ", end="", flush=True)
+    c = readchar()
+    print(c)
+    if capture("[yY]", c):
+        return ok()
+    else:
+        return fail()
 
 
 @fx
@@ -1007,3 +1067,32 @@ def taskbar(x=None, desc="", *, start=0, total=None, barcolor="white", **kwargs)
         **kwargs,
     )
     return tb if x is None else track(tb, x, start, total)
+
+
+_BASE58_CHARS = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def base58e(x):
+    """Encode bytes to Base58.
+
+    >>> base58e(b"sofia-maria-golden-girls")
+    'BXNAGjq4ty8AeedspDYRnHZwFTXtyQWNe'
+    """
+    num = bytes_to_int(x)
+    result = ""
+    while num > 0:
+        num, rem = divmod(num, 58)
+        result = _BASE58_CHARS[rem] + result
+    return result
+
+
+def base58d(x):
+    """Decode the Base58-encoded back to bytes.
+
+    >>> base58d('BXNAGjq4ty8AeedspDYRnHZwFTXtyQWNe')
+    b'sofia-maria-golden-girls'
+    """
+    num = 0
+    for c in x:
+        num = num * 58 + _BASE58_CHARS.index(c)
+    return int_to_bytes(num)

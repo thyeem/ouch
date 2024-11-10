@@ -3,8 +3,13 @@
 
 # 0.0.2
 - Forked from `foc`.
-- Added `probify`
+- Added `probify`.
 
 # 0.0.3
-- bug fixes: `dmap`, `probify`, and `taskbar`
+- bug fixes: `dmap`, `probify`, and `taskbar`.
 - `dmap` supports symoblic merging and updates.
+
+# 0.0.4
+- Added `prompt` and `tmpfile`.
+- Added `base58e` and `base58d`.
+- Added `getext` and `stripext`.
