@@ -19,4 +19,7 @@
 
 # 0.0.6
 - Add `read_conf` and `write_conf`.
-- Rename `taskbar` to `tracker`
+- Rename `taskbar` to `tracker`.
+
+# 0.0.7
+- Hotfix for `read_conf`.

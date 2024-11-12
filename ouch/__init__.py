@@ -21,7 +21,7 @@ from textwrap import fill
 
 from foc import *
 
-__version__ = "0.0.6"
+__version__ = "0.0.7"
 
 __all__ = [
     "HOME",
@@ -767,7 +767,7 @@ def read_conf(f, o=True):
     return dmap(
         k_v(s)
         for s in filter(
-            cf_(not_, g_(_.startswith)("#"), str.lstrip),
+            cf_(lambda x: x and not x.startswith("#"), str.strip),
             reader(f).read().splitlines(),
         )
     )
