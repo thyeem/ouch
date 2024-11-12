@@ -9,6 +9,7 @@ import threading
 import time
 import tty
 import zipfile
+from ast import literal_eval
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -20,7 +21,7 @@ from textwrap import fill
 
 from foc import *
 
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 
 __all__ = [
     "HOME",
@@ -66,17 +67,19 @@ __all__ = [
     "randint",
     "randn",
     "readchar",
+    "read_conf",
     "reader",
     "rmdir",
     "shell",
     "shuffle",
     "singleton",
     "stripext",
-    "taskbar",
     "thread",
     "timer",
     "timestamp",
     "tmpfile",
+    "tracker",
+    "write_conf",
     "writer",
 ]
 
@@ -347,7 +350,7 @@ def nprint(d, *, _cols=None, _width=10000, _repr=False, _sort=True):
     >>> torch.nn.Linear(3,5).state_dict() | nprint   # doctest: +SKIP
     >>> catalog() | nprint                           # doctest: +SKIP
 
-    >>> map(_ * 7)(seq(5,...)) | take(3) | nprint
+    >>> map(_ * 7)(seq(5,...)) | takel(3) | nprint
     '  +  35
        -  42
        -  49
@@ -747,6 +750,43 @@ def prompt(prompt, ok=void, fail=void):
 
 
 @fx
+def read_conf(f, o=True):
+    """Read a conf file and return a dmap of key-value pairs.
+    If ``o`` is set, evaluate values as Python literals;
+    otherwise, keep as strings.
+
+    >>> read_conf("~/.gnupg/gpg-agent.conf")  # doctest: +SKIP
+    """
+    read = literal_eval if o else id
+
+    def k_v(s):
+        s = s.split("#")[0].strip()
+        k, *v = s.split(None, 1)
+        return k, read(v[0]) if len(v) else None
+
+    return dmap(
+        k_v(s)
+        for s in filter(
+            cf_(not_, g_(_.startswith)("#"), str.lstrip),
+            reader(f).read().splitlines(),
+        )
+    )
+
+
+@fx
+def write_conf(f, conf, o=True):
+    """Write a dictionary to a conf file.
+    If ``o`` is set, write values as Python repr; otherwise, write as is.
+
+    >>> write_conf("io.conf", dict(mode="loopback"), o=False)  # doctest: +SKIP
+    """
+    dump = repr if o else id
+    f = writer(f)
+    for k, v in conf.items():
+        f.write(f"{k} {dump(v) if v is not None else ''}\n")
+
+
+@fx
 def capture(p, string):
     """Get the text that matches the first Regex pattern ``p``"""
     x = captures(p, string)
@@ -1022,10 +1062,10 @@ def timestamp(*, origin=None, w=0, d=0, h=0, m=0, s=0, from_iso=None, to_iso=Fal
 _lock = threading.Lock()
 
 
-def taskbar(it, description="", total=None, barcolor="white", **kwargs):
+def tracker(it, description="", total=None, barcolor="white", **kwargs):
     """Create a thread-safe progress bar with support for nested loops.
 
-    ``taskbar`` wraps ``rich.progress`` from pip's bundle to provide
+    ``tracker`` wraps ``rich.progress`` from pip's bundle to provide
     a simpler interface for creating progress bars, with column formats
     very similar to ``tqdm``.
 
@@ -1035,18 +1075,18 @@ def taskbar(it, description="", total=None, barcolor="white", **kwargs):
     Refer to ``rich.progress`` as all keywords follow its conventions.
 
     # single progress bar
-    >>> for batch in taskbar(dataloader, "training"):  # doctest: +SKIP
+    >>> for batch in tracker(dataloader, "training"):  # doctest: +SKIP
     ...     model(batch)
 
     # nested progress bars
-    >>> for i in taskbar(range(10), "outer"):          # doctest: +SKIP
+    >>> for i in tracker(range(10), "outer"):          # doctest: +SKIP
     ...     time.sleep(0.02)
-    ...     for j in taskbar(range(20), "inner"):
+    ...     for j in tracker(range(20), "inner"):
     ...         time.sleep(0.02)
 
     # generator with known length
     >>> g = (x for x in range(100))
-    >>> for item in taskbar(g, "task", total=100)      # doctest: +SKIP
+    >>> for item in tracker(g, "task", total=100)      # doctest: +SKIP
     ...     process(item)
     """
     import pip._vendor.rich.progress as rp
@@ -1084,9 +1124,9 @@ def taskbar(it, description="", total=None, barcolor="white", **kwargs):
             local.stack.pop()
             local.head = local.stack[-1] if local.stack else None
 
-    if not hasattr(taskbar, "local"):
-        taskbar.local = threading.local()
-    local = taskbar.local
+    if not hasattr(tracker, "local"):
+        tracker.local = threading.local()
+    local = tracker.local
     if not hasattr(local, "stack"):
         local.stack = []
         local.head = None

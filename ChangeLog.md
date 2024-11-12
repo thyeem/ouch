@@ -2,17 +2,21 @@
 - First public release
 
 # 0.0.2
-- Forked from `foc`.
-- Added `probify`.
+- Fork `ouch` from `foc`.
+- Add `probify`.
 
 # 0.0.3
 - bug fixes: `dmap`, `probify`, and `taskbar`.
 - `dmap` supports symoblic merging and updates.
 
 # 0.0.4
-- Added `prompt` and `tmpfile`.
-- Added `base58e` and `base58d`.
-- Added `getext` and `stripext`.
+- Add `prompt` and `tmpfile`.
+- Add `base58e` and `base58d`.
+- Add `getext` and `stripext`.
 
 # 0.0.5
 - Fix `taskbar`, thread-safe and nested progress-bar without boilerplates.
+
+# 0.0.6
+- Add `read_conf` and `write_conf`.
+- Rename `taskbar` to `tracker`
