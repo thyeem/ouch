@@ -23,3 +23,8 @@
 
 # 0.0.7
 - Hotfix for `read_conf`.
+
+# 0.0.8
+- Improve `timestamp`.
+- Fix `timer`.
+- Add `timeago` and `du_hs`.

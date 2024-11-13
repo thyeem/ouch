@@ -19,9 +19,10 @@ from shutil import rmtree
 from subprocess import DEVNULL, PIPE, STDOUT, Popen
 from textwrap import fill
 
+from dateutil import parser
 from foc import *
 
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 
 __all__ = [
     "HOME",
@@ -42,6 +43,7 @@ __all__ = [
     "chunks_str",
     "dirname",
     "dmap",
+    "du_hs",
     "exists",
     "flat",
     "flatl",
@@ -75,6 +77,7 @@ __all__ = [
     "singleton",
     "stripext",
     "thread",
+    "timeago",
     "timer",
     "timestamp",
     "tmpfile",
@@ -456,6 +459,21 @@ def tmpfile(prefix=None, suffix=None, dir="/tmp", size=6, encoder=bytes.hex):
         f"{normpath(dir, abs=True)}/"
         f"{prefix or ''}{encoder(randbytes(size))}{suffix or ''}"
     )
+
+
+def du_hs(f):
+    """Get the total size of a directory in human-readable format.
+
+    >>> du_hs("~/data/corpus")    # doctest: +SKIP
+    '232G'
+    >>> du_hs("../setup.py")      # doctest: +SKIP
+    '4.0K'
+    # yields ``None`` for a non-existent path
+    >>> du_hs("2252b67d2c5f369f191d51163e5d87a6")
+    """
+    o = shell(f"du -hs {f} 2>/dev/null")
+    if o:
+        return o[0].split()[0]
 
 
 def ls(
@@ -1027,6 +1045,12 @@ class polling:
 
 
 def timer(t, msg="", v=True, callback=None):
+    """Create a countdown timer with optional message and callback.
+
+    >>> timer(60)                                   # doctest: +SKIP
+    >>> timer(60 * 25, msg="Pomodoro")              # doctest: +SKIP
+    >>> timer(5, callback=lazy(randint, 1, 46, 6))  # doctest: +SKIP
+    """
     guard(isinstance(t, (int, float)), f"timer: not a number: {t}")
     guard(t > 0, f"timer: must be given a positive number: {t}")
     t = int(t)
@@ -1038,25 +1062,75 @@ def timer(t, msg="", v=True, callback=None):
         time.sleep(1)
         t -= 1
     if callback:
-        callback()
+        return callback()
 
 
-def timestamp(*, origin=None, w=0, d=0, h=0, m=0, s=0, from_iso=None, to_iso=False):
-    if from_iso:
-        t = datetime.strptime(from_iso, "%Y-%m-%dT%H:%M:%S.%f%z").timestamp()
-    else:
-        dt = timedelta(
-            weeks=w,
-            days=d,
-            hours=h,
-            minutes=m,
-            seconds=s,
-        ).total_seconds()
-        if origin is None:
-            origin = datetime.utcnow().timestamp()
-        t = origin + dt
+def timestamp(t=None, to_utc=True, to_iso=False, decimal=0):
+    """Convert time inputs to ``UTC``/local timestamp, or ``ISO`` format.
 
-    return to_iso and f"{datetime.fromtimestamp(t).isoformat()[:26]}Z" or t
+    # curruent UTC timestamp
+    >>> timestamp()  # doctest: +SKIP
+
+    # parse string to UTC
+    >>> timestamp("2025-01-01 09:00:00Z")
+    1735689600.0
+
+    # ISO format with milliseconds
+    >>> timestamp(1735657200.123456, to_iso=True, decimal=3)
+    '2024-12-31T15:00:00.123Z'
+
+    # using ``datetime`` object
+    >>> timestamp(datetime.now(), to_utc=False)  # doctest: +SKIP
+    """
+
+    def _from(t):
+        if t is None:
+            return datetime.now().timestamp()
+        elif isinstance(t, (int, float)):
+            return float(t)
+        elif isinstance(t, str):
+            return parser.parse(t).timestamp()
+        elif isinstance(t, datetime):
+            return t.timestamp()
+        else:
+            error(f"The format is not supported: {t}")
+
+    def convert(t):
+        return datetime.utcfromtimestamp(t).timestamp() if to_utc else t
+
+    def _to(t):
+        formatted = datetime.fromtimestamp(t).isoformat()
+        cut = 19 + (decimal + 1 if 0 < decimal <= 6 else 0)
+        return f"{formatted[:cut]}Z" if to_iso else t
+
+    return cf_(_to, convert, _from)(t)
+
+
+def timeago(dt):
+    """Convert a time difference in seconds to a human-readable string.
+
+    >>> timeago(3600)
+    '1 hour ago'
+    >>> timeago(86400 * 2)
+    '2 days ago'
+    >>> timeago(0)
+    'just now'
+    """
+    sec = int(dt)
+    units = [
+        (60 * 60 * 24 * 365, "year"),
+        (60 * 60 * 24 * 30, "month"),
+        (60 * 60 * 24 * 7, "week"),
+        (60 * 60 * 24, "day"),
+        (60 * 60, "hour"),
+        (60, "minute"),
+        (1, "second"),
+    ]
+    for unit_sec, unit in units:
+        if sec >= unit_sec:
+            count = sec // unit_sec
+            return f"{count} {unit}{'s' if count > 1 else ''} ago"
+    return "just now"
 
 
 _lock = threading.Lock()
