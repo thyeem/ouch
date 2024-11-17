@@ -28,3 +28,6 @@
 - Improve `timestamp`.
 - Fix `timer`.
 - Add `timeago` and `du_hs`.
+
+# 0.0.9
+- Fix `flatten`

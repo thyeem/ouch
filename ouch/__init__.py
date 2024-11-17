@@ -12,7 +12,7 @@ import zipfile
 from ast import literal_eval
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from glob import glob
 from io import BytesIO, StringIO
 from shutil import rmtree
@@ -22,7 +22,7 @@ from textwrap import fill
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.8"
+__version__ = "0.0.9"
 
 __all__ = [
     "HOME",
@@ -107,7 +107,7 @@ def flatten(x, d=1):
             for a in (collect(o) if _lazy_iterp(o) else o if _ns_iterp(o) else [o])
         ]
 
-    return cf_(go, rep=d)(x)
+    return cf_(*replicate(d, go))(x)
 
 
 @fx
