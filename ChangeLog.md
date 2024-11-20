@@ -31,3 +31,6 @@
 
 # 0.0.9
 - Fix `flatten`
+
+# 0.0.10
+- Fix `tracker`

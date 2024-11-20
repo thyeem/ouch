@@ -22,7 +22,7 @@ from textwrap import fill
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.9"
+__version__ = "0.0.10"
 
 __all__ = [
     "HOME",
@@ -1136,7 +1136,7 @@ def timeago(dt):
 _lock = threading.Lock()
 
 
-def tracker(it, description="", total=None, barcolor="white", **kwargs):
+def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs):
     """Create a thread-safe progress bar with support for nested loops.
 
     ``tracker`` wraps ``rich.progress`` from pip's bundle to provide
@@ -1206,16 +1206,20 @@ def tracker(it, description="", total=None, barcolor="white", **kwargs):
         local.head = None
     if total is None:
         total = len(it) if float(op.length_hint(it)) else None
+    if start:
+        it = islice(it, start, None)
 
     if local.head is None:
         with _lock:
             with create(barcolor=barcolor, **kwargs) as tb:
-                task = tb.add_task(description, total=total)
+                task = tb.add_task(description, total=total, completed=start)
                 for item in tb.track(it, task_id=task):
                     yield item
+                if total:
+                    tb._tasks.get(task).completed = total
     else:
         tb = local.head
-        task = tb.add_task(description, total=total)
+        task = tb.add_task(description, total=total, completed=start)
         for item in tb.track(it, task_id=task):
             yield item
         tb.remove_task(task)
