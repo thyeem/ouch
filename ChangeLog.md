@@ -34,3 +34,6 @@
 
 # 0.0.10
 - Fix `tracker`
+
+# 0.0.11
+- Add `tabulate` and `deepdict`
