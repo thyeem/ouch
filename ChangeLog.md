@@ -30,10 +30,15 @@
 - Add `timeago` and `du_hs`.
 
 # 0.0.9
-- Fix `flatten`
+- Fix `flatten`.
 
 # 0.0.10
-- Fix `tracker`
+- Fix `tracker`.
 
 # 0.0.11
-- Add `tabulate` and `deepdict`
+- Add `tabulate` and `deepdict`.
+
+# 0.0.12
+- Fix a bug in `dmap`.
+- Fix `neatly` and `tabulate`
+- Rename `nprint` to `pp`

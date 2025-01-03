@@ -23,7 +23,7 @@ from textwrap import fill
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.11"
+__version__ = "0.0.12"
 
 __all__ = [
     "HOME",
@@ -57,7 +57,7 @@ __all__ = [
     "mkdir",
     "neatly",
     "normpath",
-    "nprint",
+    "pp",
     "parmap",
     "pbcopy",
     "pbpaste",
@@ -190,12 +190,12 @@ class dmap(dict):
     >>> repr(d.lover)
     ''
 
-    You can use ``nprint`` together to print formatted text.
-    >>> d | nprint
-    cliburn  |      final  |  Rachmaninov Piano Concerto No.3, Op.30
-             :  semifinal  |  concerto  |  Mozart Piano Concerto No.22, K.482
-             :             :   recital  |  Liszt 12 Transcendental Etudes
-       name  |  yunchan lim
+    You can use ``pp`` together to print formatted text.
+    >>> d | pp
+    cliburn |     final | Rachmaninov Piano Concerto No.3, Op.30
+              semifinal | concerto | Mozart Piano Concerto No.22, K.482
+                           recital | Liszt 12 Transcendental Etudes
+       name | yunchan lim
     """
 
     __slots__ = ()
@@ -243,7 +243,7 @@ class dmap(dict):
 
     @classmethod
     def __val__(cls, val):
-        if isinstance(val, dict) and not isinstance(val, dmap):
+        if isinstance(val, dict):
             return dmap(val)
         elif _ns_builtin_iterp(val):
             return [cls.__val__(x) for x in val]
@@ -326,93 +326,99 @@ def deepdict(obj, seen=None):
 
 
 @fx
-def neatly(d, _cols=None, _width=10000, _repr=False, _sort=True, _root=True):
+def neatly(d, width=5000, sort=True, show=5, gap=1, quote=False, margin=None):
     """Create neatly formatted strings for instances of builtin iterables."""
+    __ = " " * gap
 
-    def indent(x, i):
-        def u(c, j=0):
-            return f"{c:3}{x[j:]}"
+    def stringify(x):
+        def join(x):
+            return ", ".join(map(str, x))
 
-        return (
-            (u("-", 3) if i else u("+", 3))
-            if x and x[0] == "|"
-            else (
-                f"{x}"
-                if x and x[0] == ":"
-                else ((u("-") if x[0] == "+" else u("")) if i else u("+"))
-            )
-        )
+        if not show or len(x) < 2 * show:
+            return str(x)
+        else:
+            return f"[{join(x[:show])}, ..., {join(x[-show:])}]"
 
-    def bullet(o, s):
-        return (
-            (indent(x, i) for i, x in enumerate(s))
-            if _ns_builtin_iterp(o) and not isinstance(o, dict)
-            else (f":  {x}" if i else f"|  {x}" for i, x in enumerate(s))
-        )
-
-    def filine(x, width, initial, subsequent):
+    def filln(text, initial_indent, subsequent_indent):
         return fill(
-            x,
+            text,
             width=width,
+            initial_indent=initial_indent,
+            subsequent_indent=subsequent_indent,
             break_on_hyphens=False,
             drop_whitespace=False,
-            initial_indent=initial,
-            subsequent_indent=subsequent,
         )
+
+    def bullet(o, sym):
+        return [f" {__}{x}" if i else f"{sym}{__}{x}" for i, x in enumerate(o)]
 
     if isinstance(d, dict):
         if not d:
             return ""
-        _cols = _cols or max(map(len, d.keys()))
+        margin = margin or max(map(cf_(len, str), d.keys()))
         return unlines(
-            filine(v, _width, f"{k:>{_cols}}  ", f"{' ':>{_cols}}     ")
-            for a, o in (sort if _sort else id)(d.items())
-            for k, v in [
-                ("", b) if i else (a, b)
-                for i, b in enumerate(
-                    bullet(o, lines(neatly(o, _repr=_repr, _root=False)))
+            filln(
+                ln,
+                f"{('' if i else k):>{margin}}{__}",
+                f"{' ':>{margin}{(2*gap+1)}}",
+            )
+            for k, v in (sorted if sort else id)(d.items())
+            for i, ln in enumerate(
+                bullet(
+                    lines(neatly(v, sort=sort, show=show, gap=gap, quote=quote)),
+                    "|",
                 )
-            ]
+            )
         )
     elif _ns_builtin_iterp(d):
-        if _root:
-            return neatly({"'": d}, _repr=_repr, _root=False)
-        return unlines(
-            filine(v, _width, "", "   ")
-            for o in d
-            for v in bullet(o, lines(neatly(o, _repr=_repr, _root=False)))
-        )
+        if any(isinstance(x, dict) or _ns_builtin_iterp(x) for x in d):
+            return unlines(
+                filln(v, "", "")
+                for i, o in enumerate(d)
+                for v in bullet(
+                    lines(neatly(o, sort=sort, show=show, gap=gap, quote=quote)),
+                    "," if i else "[",
+                )
+            )
+        else:
+            return stringify(d)
     else:
-        return (repr if _repr else str)(d)
+        return (repr if quote else str)(d)
 
 
 @fx
-def nprint(d, *, _cols=None, _width=10000, _repr=False, _sort=True):
+def pp(d, width=5000, sort=True, show=5, gap=1, quote=False, margin=None):
     """Print neatly formatted strings of the builtin iterables by ``neatly``.
 
-    >>> import torch                                 # doctest: +SKIP
-    >>> torch.nn.Linear(3,5).state_dict() | nprint   # doctest: +SKIP
-    >>> catalog() | nprint                           # doctest: +SKIP
-
-    >>> map(_ * 7)(seq(5,...)) | takel(3) | nprint
-    '  +  35
-       -  42
-       -  49
+    >>> import torch                               # doctest: +SKIP
+    >>> torch.nn.Linear(8, 24).state_dict() | pp   # doctest: +SKIP
+    >>> map(_ * 7)(seq(5,...)) | takel(200) | pp
+    [35, 42, 49, 56, 63, ..., 1400, 1407, 1414, 1421, 1428]
     """
-    print(neatly(d, _cols=_cols, _width=_width, _repr=_repr, _sort=_sort))
+    print(
+        neatly(
+            d,
+            width=5000,
+            sort=sort,
+            show=show,
+            gap=gap,
+            quote=quote,
+            margin=margin,
+        )
+    )
 
 
 @fx
-def tabulate(rows, header=None, style="plain", missing="", nohead=False, fn=id):
+def tabulate(rows, nohead=False, style="plain", missing="", fn=id):
     """Create a formatted table from data.
 
-     header | titles of columns
+     nohead | first row of ``rows`` is used as head unless ``nohead``
       style | {"plain", "markdown", "org", "grid"}
     missing | placeholder for missing data (``None``)
        fn   | a function that finalizes each row
 
-    >>> data = [['Sofia', 9], ['Maria', 7]]
-    >>> print(tabulate(data, header=['Name', 'Age'], style='grid'))
+    >>> data = [['Name', 'Age'], ['Sofia', 9], ['Maria', 7]]
+    >>> print(tabulate(data, style='grid'))
     +-------+-----+
     | Name  | Age |
     +=======+=====+
@@ -434,10 +440,6 @@ def tabulate(rows, header=None, style="plain", missing="", nohead=False, fn=id):
     guard(
         rows | map(length) | fx(set) | length == 1,
         "error, either empty rows or not all rows have the same length.",
-    )
-    guard(
-        not header or (len(header) in [len(rows[0]), len(rows[0]) - 1]),
-        "error, the wrong length of header provided.",
     )
     sty = dmap(
         grid=dict(
@@ -470,7 +472,6 @@ def tabulate(rows, header=None, style="plain", missing="", nohead=False, fn=id):
         f"Error, unsupported border style: '{style}'.\n"
         "Options are 'grid', 'markdown', 'org', and 'plain'."
     )
-    rows = [header] + rows if header else rows
     ws = [  # [maximum-of-each-coloum-width]
         max(len(str(c) if c is not None else missing) for c in col)
         for col in zip(*rows)
@@ -479,11 +480,11 @@ def tabulate(rows, header=None, style="plain", missing="", nohead=False, fn=id):
     o = []
     if sty.top:
         o.append(sty.top(ws))
-    if header and not nohead:
-        o.append(sty.left + fst(fmt_rows) + sty.right)
+    if not nohead:
+        o.append(sty.left + head(fmt_rows) + sty.right)
         if sty.header:
             o.append(sty.header(ws))
-    for r in fmt_rows[1:] if header else fmt_rows:
+    for r in fmt_rows if nohead else tail(fmt_rows):
         o.append(sty.left + r + sty.right)
         if sty.middle:
             o.append(sty.middle(ws))
