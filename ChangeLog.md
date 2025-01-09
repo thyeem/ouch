@@ -42,3 +42,6 @@
 - Fix a bug in `dmap`.
 - Fix `neatly` and `tabulate`
 - Rename `nprint` to `pp`
+
+# 0.0.13
+- Fix `probify`.

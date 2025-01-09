@@ -23,7 +23,7 @@ from textwrap import fill
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.12"
+__version__ = "0.0.13"
 
 __all__ = [
     "HOME",
@@ -1022,7 +1022,15 @@ def probify(fn, p=0.5):
     Russian Roulette:
     >>> probify(p=1/6)(fire_gun)("bullet")  # doctest: +SKIP
     """
-    return fn if rand() < p else id
+
+    def go(*args, **kwargs):
+        return (
+            fn(*args, **kwargs)
+            if rand() < p
+            else None if not args else args[0] if len(args) == 1 else tuple(args)
+        )
+
+    return go
 
 
 @fx
