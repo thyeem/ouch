@@ -45,3 +45,6 @@
 
 # 0.0.13
 - Fix `probify`.
+
+# 0.0.14
+- Fix `rand`, `randn`, and `randint`.

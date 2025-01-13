@@ -23,7 +23,7 @@ from textwrap import fill
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.13"
+__version__ = "0.0.14"
 
 __all__ = [
     "HOME",
@@ -791,7 +791,7 @@ def pbpaste():
 def reader(f=None, mode="r", zipf=False):
     """Get ready to read stream from a file or stdin, then returns the handle."""
     if f is not None:
-        guard(exists(f, "f"), f"reader: not found such a file: {f}")
+        guard(exists(f, "f"), f"reader, not found such a file: {f}")
     return (
         sys.stdin
         if f is None
@@ -967,49 +967,37 @@ def bin_to_bytes(x):
 
 
 def randbytes(n):
-    """Generate cryptographically secure random bytes"""
+    """Generate cryptographically secure random bytes."""
     return os.urandom(n)
 
 
-def rand(x=None, high=None, size=None):
-    return (
-        [rd.uniform(x, high) for _ in range(size)]
-        if size is not None
-        else (
-            rd.uniform(x, high)
-            if high is not None
-            else rd.uniform(0, x) if x is not None else rd.random()
-        )
-    )
+def rand(a=0, b=None, *, size=None):
+    a, b = (0, 1) if not a and b is None else (0, a) if b is None else (a, b)
+    rng = lazy(rd.uniform, a, b)
+    return [rng() for _ in range(size)] if size else rng()
 
 
-def randn(mu=0, sigma=1, size=None):
+def randn(mu=0, sigma=1, *, size=None):
     return (
         [rd.gauss(mu, sigma) for _ in range(size)]
         if size is not None
-        else rd.uniform(mu, sigma)
+        else rd.gauss(mu, sigma)
     )
 
 
-def randint(x=None, high=None, size=None):
-    """generate random integer cryptographically secure and faster than numpy's.
-    return random integer(s) in range of [low, high)
+def randint(a=None, b=None, *, size=None):
+    """generate cryptographically secure random integer.
+    returns random integer(s) in range of [a, b).
     """
 
-    def rint(high=1 << 256, low=0):
-        guard(low < high, f"randint: low({low}) must be less than high({high})")
-        x = high - low
-        return low + (bytes_to_int(randbytes((x.bit_length() + 7) // 8)) % x)
+    def r(a, b):
+        guard(a < b, f"randint, low({a}) >= high({b})")
+        x = b - a
+        return a + (bytes_to_int(randbytes((x.bit_length() + 7) // 8)) % x)
 
-    return (
-        [rint(high, x) for _ in range(size)]
-        if size is not None
-        else (
-            rint(high, x)
-            if high is not None
-            else (rint(x) if x is not None else rint())
-        )
-    )
+    a, b = (0, 1 << 256) if not a and b is None else (0, a) if b is None else (a, b)
+    rng = lazy(r, a, b)
+    return [rng() for _ in range(size)] if size else rng()
 
 
 @fx
@@ -1189,8 +1177,8 @@ def timer(t, msg="", v=True, callback=None):
     >>> timer(60 * 25, msg="Pomodoro")              # doctest: +SKIP
     >>> timer(5, callback=lazy(randint, 1, 46, 6))  # doctest: +SKIP
     """
-    guard(isinstance(t, (int, float)), f"timer: not a number: {t}")
-    guard(t > 0, f"timer: must be given a positive number: {t}")
+    guard(isinstance(t, (int, float)), f"timer, not a number: {t}")
+    guard(t > 0, f"timer, must be given a positive number: {t}")
     t = int(t)
     fmt = f"{len(str(t))}d"
     while t >= 0:
