@@ -48,3 +48,6 @@
 
 # 0.0.14
 - Fix `rand`, `randn`, and `randint`.
+
+# 0.0.15
+- Fix `rand*`: follow the convention

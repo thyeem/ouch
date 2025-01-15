@@ -23,7 +23,7 @@ from textwrap import fill
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.14"
+__version__ = "0.0.15"
 
 __all__ = [
     "HOME",
@@ -971,13 +971,13 @@ def randbytes(n):
     return os.urandom(n)
 
 
-def rand(a=0, b=None, *, size=None):
+def rand(a=0, b=None, size=None):
     a, b = (0, 1) if not a and b is None else (0, a) if b is None else (a, b)
     rng = lazy(rd.uniform, a, b)
     return [rng() for _ in range(size)] if size else rng()
 
 
-def randn(mu=0, sigma=1, *, size=None):
+def randn(mu=0, sigma=1, size=None):
     return (
         [rd.gauss(mu, sigma) for _ in range(size)]
         if size is not None
@@ -985,7 +985,7 @@ def randn(mu=0, sigma=1, *, size=None):
     )
 
 
-def randint(a=None, b=None, *, size=None):
+def randint(a=None, b=None, size=None):
     """generate cryptographically secure random integer.
     returns random integer(s) in range of [a, b).
     """
