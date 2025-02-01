@@ -51,3 +51,6 @@
 
 # 0.0.15
 - Fix `rand*`: follow the convention
+
+# 0.0.16
+- Fix `tracker`: `rich.Progress` no longer supports reusing existing tasks

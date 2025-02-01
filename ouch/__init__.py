@@ -23,7 +23,7 @@ from textwrap import fill
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.15"
+__version__ = "0.0.16"
 
 __all__ = [
     "HOME",
@@ -1286,7 +1286,7 @@ def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs)
 
     # generator with known length
     >>> g = (x for x in range(100))
-    >>> for item in tracker(g, "task", total=100)      # doctest: +SKIP
+    >>> for item in tracker(g, "task", total=100):     # doctest: +SKIP
     ...     process(item)
     """
     import pip._vendor.rich.progress as rp
@@ -1339,15 +1339,17 @@ def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs)
         with _lock:
             with create(barcolor=barcolor, **kwargs) as tb:
                 task = tb.add_task(description, total=total, completed=start)
-                for item in tb.track(it, task_id=task):
+                for item in it:
                     yield item
+                    tb.advance(task, 1)
                 if total:
                     tb._tasks.get(task).completed = total
     else:
         tb = local.head
         task = tb.add_task(description, total=total, completed=start)
-        for item in tb.track(it, task_id=task):
+        for item in it:
             yield item
+            tb.advance(task, 1)
         tb.remove_task(task)
 
 
