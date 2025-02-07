@@ -54,3 +54,7 @@
 
 # 0.0.16
 - Fix `tracker`: `rich.Progress` no longer supports reusing existing tasks
+
+# 0.0.17
+- Add `dataq`
+- Fix `flat` and `neatly`

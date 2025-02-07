@@ -20,10 +20,11 @@ from shutil import rmtree
 from subprocess import DEVNULL, PIPE, STDOUT, Popen
 from textwrap import fill
 
+import numpy as np
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.16"
+__version__ = "0.0.17"
 
 __all__ = [
     "HOME",
@@ -42,6 +43,7 @@ __all__ = [
     "chunks_from",
     "chunks_iter",
     "chunks_str",
+    "dataq",
     "dirname",
     "dmap",
     "deepdict",
@@ -124,12 +126,12 @@ def flat(*args):
     [1, 2, 3, 0, 1, 2]
     """
 
-    def go(xss):
-        if _ns_iterp(xss):
-            for xs in xss:
-                yield from go([*xs] if _ns_iterp(xs) else xs)
-        else:
-            yield xss
+    def go(args):
+        for arg in args:
+            if _ns_iterp(arg):
+                yield from go(arg)
+            else:
+                yield arg
 
     return go(args)
 
@@ -161,7 +163,9 @@ def _ns_iterp(x):
 
 
 def _ns_builtin_iterp(x):
-    return isinstance(x, (list, tuple, set, frozenset, dict, range, memoryview))
+    return isinstance(
+        x, (list, tuple, range, deque, set, dict, dict, frozenset, memoryview)
+    )
 
 
 class dmap(dict):
@@ -326,7 +330,7 @@ def deepdict(obj, seen=None):
 
 
 @fx
-def neatly(d, width=5000, sort=True, show=5, gap=1, quote=False, margin=None):
+def neatly(d, width=200, sort=True, show=5, gap=1, quote=False):
     """Create neatly formatted strings for instances of builtin iterables."""
     __ = " " * gap
 
@@ -334,10 +338,11 @@ def neatly(d, width=5000, sort=True, show=5, gap=1, quote=False, margin=None):
         def join(x):
             return ", ".join(map(str, x))
 
-        if not show or len(x) < 2 * show:
-            return str(x)
-        else:
+        def contract(x, show):
             return f"[{join(x[:show])}, ..., {join(x[-show:])}]"
+
+        s = str(x) if not show or len(x) < 2 * show else contract(list(x), show)
+        return s if len(s) < width else contract(list(x), 1)
 
     def filln(text, initial_indent, subsequent_indent):
         return fill(
@@ -355,17 +360,26 @@ def neatly(d, width=5000, sort=True, show=5, gap=1, quote=False, margin=None):
     if isinstance(d, dict):
         if not d:
             return ""
-        margin = margin or max(map(cf_(len, str), d.keys()))
+        margin = max(map(cf_(len, str), d.keys()))
         return unlines(
             filln(
                 ln,
                 f"{('' if i else k):>{margin}}{__}",
-                f"{' ':>{margin}{(2*gap+1)}}",
+                f"{' ':>{margin+2*gap+1}}",
             )
             for k, v in (sorted if sort else id)(d.items())
             for i, ln in enumerate(
                 bullet(
-                    lines(neatly(v, sort=sort, show=show, gap=gap, quote=quote)),
+                    lines(
+                        neatly(
+                            v,
+                            width=width,
+                            sort=sort,
+                            show=show,
+                            gap=gap,
+                            quote=quote,
+                        )
+                    ),
                     "|",
                 )
             )
@@ -376,7 +390,16 @@ def neatly(d, width=5000, sort=True, show=5, gap=1, quote=False, margin=None):
                 filln(v, "", "")
                 for i, o in enumerate(d)
                 for v in bullet(
-                    lines(neatly(o, sort=sort, show=show, gap=gap, quote=quote)),
+                    lines(
+                        neatly(
+                            o,
+                            width=width,
+                            sort=sort,
+                            show=show,
+                            gap=gap,
+                            quote=quote,
+                        )
+                    ),
                     "," if i else "[",
                 )
             )
@@ -387,7 +410,7 @@ def neatly(d, width=5000, sort=True, show=5, gap=1, quote=False, margin=None):
 
 
 @fx
-def pp(d, width=5000, sort=True, show=5, gap=1, quote=False, margin=None):
+def pp(d, width=200, sort=True, show=5, gap=1, quote=False):
     """Print neatly formatted strings of the builtin iterables by ``neatly``.
 
     >>> import torch                               # doctest: +SKIP
@@ -398,12 +421,11 @@ def pp(d, width=5000, sort=True, show=5, gap=1, quote=False, margin=None):
     print(
         neatly(
             d,
-            width=5000,
+            width=width,
             sort=sort,
             show=show,
             gap=gap,
             quote=quote,
-            margin=margin,
         )
     )
 
@@ -1380,3 +1402,185 @@ def base58d(x):
     for c in x:
         num = num * 58 + _BASE58_CHARS.index(c)
     return int_to_bytes(num)
+
+
+class dataq:
+    def __init__(self, n=100, data=None):
+        self.n = n
+        self.data = deque(maxlen=n)
+        self._cache = None
+        if data:
+            self.update(data)
+
+    def update(self, *args):
+        self.data.extend(flat(args))
+        self._cache = None
+        return self
+
+    def nan(f):
+        def wrapper(self, *args, **kwargs):
+            if not self.data:
+                return float("nan")
+            return f(self, *args, **kwargs)
+
+        return wrapper
+
+    def __bool__(self):
+        return bool(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, x):
+        if isinstance(x, slice):
+            return np.array(self.data)[x]
+        return self.data.__getitem__(x)
+
+    @property
+    def cache(self):
+        if self._cache is None:
+            self._cache = np.array(self.data)
+        return self._cache
+
+    @property
+    def size(self):
+        return len(self)
+
+    @nan
+    def percentile(self, q):
+        return np.percentile(self.cache, q)
+
+    @nan
+    def quantile(self, q):
+        return np.quantile(self.cache, q)
+
+    @property
+    def q1(self):
+        return np.percentile(self.cache, 25)
+
+    @property
+    @nan
+    def median(self):
+        return np.median(self.cache)
+
+    @property
+    def q3(self):
+        return np.percentile(self.cache, 75)
+
+    @property
+    def iqr(self):
+        return self.q3 - self.q1
+
+    @property
+    @nan
+    def quartile(self):
+        return np.percentile(self.cache, [25, 50, 75])
+
+    @property
+    @nan
+    def mad(self):
+        return np.median(np.abs(self.cache) - self.median)
+
+    @property
+    @nan
+    def mean(self):
+        return np.mean(self.cache)
+
+    @property
+    @nan
+    def var(self):
+        return np.var(self.cache)
+
+    @property
+    @nan
+    def std(self):
+        return np.std(self.cache)
+
+    @property
+    @nan
+    def muad(self):
+        return np.mean(np.abs(self.cache) - self.mean)
+
+    @property
+    @nan
+    def cv(self):
+        return self.std / self.mean
+
+    @property
+    @nan
+    def hmean(self):
+        if np.any(self.cache < 0):
+            return float("nan")
+        return self.size / np.sum(1 / self.cache)
+
+    @property
+    @nan
+    def gmean(self):
+        if np.any(self.cache < 0):
+            return float("nan")
+        return np.exp(np.mean(np.log(self.cache)))
+
+    @property
+    @nan
+    def skew(self):
+        return np.mean((self.cache - self.mean) ** 3) / (self.std**3)
+
+    @property
+    @nan
+    def kurtosis(self):
+        return np.mean((self.cache - self.mean) ** 4) / (self.std**4) - 3
+
+    @property
+    @nan
+    def min(self):
+        return np.min(self.cache)
+
+    @property
+    @nan
+    def max(self):
+        return np.max(self.cache)
+
+    @property
+    @nan
+    def minmax(self):
+        return self.min, self.max
+
+    @property
+    def sort(self):
+        return np.sort(self.cache)
+
+    @property
+    def sum(self):
+        return np.sum(self.cache)
+
+    @property
+    def cumsum(self):
+        return np.cumsum(self.sort)
+
+    @property
+    def prod(self):
+        return np.prod(self.cache)
+
+    @property
+    def cumprod(self):
+        return np.cumprod(self.sort)
+
+    def describe(self, as_dict=False):
+        return dmap(
+            size=self.size,
+            min=self.min,
+            max=self.max,
+            mean=self.mean,
+            var=self.var,
+            std=self.std,
+            median=self.median,
+            q1=self.q1,
+            q3=self.q3,
+            iqr=self.iqr,
+            mad=self.mad,
+            skewness=self.skew,
+            kurtosis=self.kurtosis,
+            gmean=self.gmean,
+            hmean=self.hmean,
+            CV=self.cv,
+        ) | (id if as_dict else pp(sort=False))
