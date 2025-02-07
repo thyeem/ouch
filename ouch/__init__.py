@@ -24,7 +24,7 @@ import numpy as np
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.17"
+__version__ = "0.0.19"
 
 __all__ = [
     "HOME",
@@ -330,7 +330,7 @@ def deepdict(obj, seen=None):
 
 
 @fx
-def neatly(d, width=200, sort=True, show=5, gap=1, quote=False):
+def neatly(d, width=200, sort=True, show=5, gap=1, quote=False, margin=None):
     """Create neatly formatted strings for instances of builtin iterables."""
     __ = " " * gap
 
@@ -360,7 +360,7 @@ def neatly(d, width=200, sort=True, show=5, gap=1, quote=False):
     if isinstance(d, dict):
         if not d:
             return ""
-        margin = max(map(cf_(len, str), d.keys()))
+        margin = margin or max(map(cf_(len, str), d.keys()))
         return unlines(
             filln(
                 ln,
@@ -410,7 +410,7 @@ def neatly(d, width=200, sort=True, show=5, gap=1, quote=False):
 
 
 @fx
-def pp(d, width=200, sort=True, show=5, gap=1, quote=False):
+def pp(d, width=200, sort=True, show=5, gap=1, quote=False, margin=None):
     """Print neatly formatted strings of the builtin iterables by ``neatly``.
 
     >>> import torch                               # doctest: +SKIP
@@ -426,6 +426,7 @@ def pp(d, width=200, sort=True, show=5, gap=1, quote=False):
             show=show,
             gap=gap,
             quote=quote,
+            margin=margin,
         )
     )
 
@@ -1353,7 +1354,7 @@ def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs)
         local.stack = []
         local.head = None
     if total is None:
-        total = len(it) if float(op.length_hint(it)) else None
+        total = len(it) if op.length_hint(it) else None
     if start:
         it = islice(it, start, None)
 
@@ -1405,12 +1406,13 @@ def base58d(x):
 
 
 class dataq:
-    def __init__(self, n=100, data=None):
-        self.n = n
-        self.data = deque(maxlen=n)
+    def __init__(self, x=100):
+        data = _ns_builtin_iterp(x)
+        self.n = op.length_hint(x) if data else x
+        self.data = deque(maxlen=self.n)
         self._cache = None
         if data:
-            self.update(data)
+            self.update(x)
 
     def update(self, *args):
         self.data.extend(flat(args))
@@ -1433,7 +1435,7 @@ class dataq:
 
     def __getitem__(self, x):
         if isinstance(x, slice):
-            return np.array(self.data)[x]
+            return self.cache[x]
         return self.data.__getitem__(x)
 
     @property
@@ -1444,7 +1446,7 @@ class dataq:
 
     @property
     def size(self):
-        return len(self)
+        return self.data.maxlen
 
     @nan
     def percentile(self, q):
@@ -1479,7 +1481,7 @@ class dataq:
     @property
     @nan
     def mad(self):
-        return np.median(np.abs(self.cache) - self.median)
+        return np.median(np.abs(self.cache - self.median))
 
     @property
     @nan
@@ -1499,7 +1501,7 @@ class dataq:
     @property
     @nan
     def muad(self):
-        return np.mean(np.abs(self.cache) - self.mean)
+        return np.mean(np.abs(self.cache - self.mean))
 
     @property
     @nan
@@ -1511,7 +1513,7 @@ class dataq:
     def hmean(self):
         if np.any(self.cache < 0):
             return float("nan")
-        return self.size / np.sum(1 / self.cache)
+        return len(self) / np.sum(1 / self.cache)
 
     @property
     @nan
@@ -1567,7 +1569,7 @@ class dataq:
 
     def describe(self, as_dict=False):
         return dmap(
-            size=self.size,
+            count=len(self),
             min=self.min,
             max=self.max,
             mean=self.mean,
