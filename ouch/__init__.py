@@ -24,7 +24,7 @@ import numpy as np
 from dateutil import parser
 from foc import *
 
-__version__ = "0.0.19"
+__version__ = "0.0.20"
 
 __all__ = [
     "HOME",
@@ -1313,16 +1313,33 @@ def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs)
     ...     process(item)
     """
     import pip._vendor.rich.progress as rp
+    from pip._vendor.rich.console import Console
+    from pip._vendor.rich.jupyter import JupyterMixin
+
+    class Progress(rp.Progress, JupyterMixin):
+        pass
 
     class JobSpeedColumn(rp.ProgressColumn):
-        def render(self, task) -> rp.Text:
+        def render(self, task):
             if task.speed is None:
                 return rp.Text("?", style="progress.data.speed")
             return rp.Text(f"{task.speed:2.2f} it/s", style="progress.data.speed")
 
+    def in_jupyter():
+        try:
+            return get_ipython().__class__.__name__ == "ZMQInteractiveShell"
+        except NameError:
+            return False
+
     @contextmanager
     def create(barcolor=barcolor, **kwargs):
-        prog = rp.Progress(
+        if in_jupyter():
+            console = Console(force_jupyter=True)
+            progress = Progress
+        else:
+            console = Console()
+            progress = rp.Progress
+        prog = progress(
             "[progress.description]{task.description}",
             "",
             rp.TaskProgressColumn(),
@@ -1336,6 +1353,7 @@ def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs)
             rp.TimeRemainingColumn(),
             "",
             JobSpeedColumn(),
+            console=console,
             **kwargs,
         )
         local.stack.append(prog)
@@ -1350,11 +1368,15 @@ def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs)
     if not hasattr(tracker, "local"):
         tracker.local = threading.local()
     local = tracker.local
+
     if not hasattr(local, "stack"):
         local.stack = []
         local.head = None
+
     if total is None:
-        total = len(it) if op.length_hint(it) else None
+        length = op.length_hint(it)
+        total = length if length > 0 else None
+
     if start:
         it = islice(it, start, None)
 
@@ -1365,14 +1387,18 @@ def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs)
                 for item in it:
                     yield item
                     tb.advance(task, 1)
-                if total:
-                    tb._tasks.get(task).completed = total
+                if total is not None:
+                    tb._tasks[task].completed = total
+                    tb.refresh()
     else:
         tb = local.head
         task = tb.add_task(description, total=total, completed=start)
         for item in it:
             yield item
             tb.advance(task, 1)
+        if total is not None:
+            tb._tasks[task].completed = total
+            tb.refresh()
         tb.remove_task(task)
 
 

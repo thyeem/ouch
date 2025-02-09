@@ -61,3 +61,6 @@
 
 # 0.0.19
 - Hotfix: `dataq` and `neatly`
+
+# 0.0.20
+- Fix `tracker`: support Jupyter environment
