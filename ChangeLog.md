@@ -64,3 +64,6 @@
 
 # 0.0.20
 - Fix `tracker`: support Jupyter environment
+
+# 0.0.21
+- Bugfix in `timestamp`. Use `datetime.fromisoformat`.

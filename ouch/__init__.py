@@ -21,10 +21,9 @@ from subprocess import DEVNULL, PIPE, STDOUT, Popen
 from textwrap import fill
 
 import numpy as np
-from dateutil import parser
 from foc import *
 
-__version__ = "0.0.20"
+__version__ = "0.0.21"
 
 __all__ = [
     "HOME",
@@ -1238,7 +1237,7 @@ def timestamp(t=None, to_utc=True, to_iso=False, decimal=0):
         elif isinstance(t, (int, float)):
             return float(t)
         elif isinstance(t, str):
-            return parser.parse(t).timestamp()
+            return datetime.fromisoformat(t.replace("Z", "+00:00")).timestamp()
         elif isinstance(t, datetime):
             return t.timestamp()
         else:
