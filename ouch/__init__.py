@@ -23,7 +23,7 @@ from textwrap import fill
 import numpy as np
 from foc import *
 
-__version__ = "0.0.21"
+__version__ = "0.0.22"
 
 __all__ = [
     "HOME",
@@ -1313,10 +1313,6 @@ def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs)
     """
     import pip._vendor.rich.progress as rp
     from pip._vendor.rich.console import Console
-    from pip._vendor.rich.jupyter import JupyterMixin
-
-    class Progress(rp.Progress, JupyterMixin):
-        pass
 
     class JobSpeedColumn(rp.ProgressColumn):
         def render(self, task):
@@ -1324,21 +1320,12 @@ def tracker(it, description="", total=None, start=0, barcolor="white", **kwargs)
                 return rp.Text("?", style="progress.data.speed")
             return rp.Text(f"{task.speed:2.2f} it/s", style="progress.data.speed")
 
-    def in_jupyter():
-        try:
-            return get_ipython().__class__.__name__ == "ZMQInteractiveShell"
-        except NameError:
-            return False
-
     @contextmanager
     def create(barcolor=barcolor, **kwargs):
-        if in_jupyter():
-            console = Console(force_jupyter=True)
-            progress = Progress
-        else:
-            console = Console()
-            progress = rp.Progress
-        prog = progress(
+        console = (
+            Console(force_jupyter=True) if "get_ipython" in globals() else Console()
+        )
+        prog = rp.Progress(
             "[progress.description]{task.description}",
             "",
             rp.TaskProgressColumn(),

@@ -67,3 +67,6 @@
 
 # 0.0.21
 - Bugfix in `timestamp`. Use `datetime.fromisoformat`.
+
+# 0.0.22
+- Fix `tracker`
