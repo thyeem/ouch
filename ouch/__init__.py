@@ -19,11 +19,12 @@ from io import BytesIO, StringIO
 from shutil import rmtree
 from subprocess import DEVNULL, PIPE, STDOUT, Popen
 from textwrap import fill
+from unicodedata import east_asian_width
 
 import numpy as np
 from foc import *
 
-__version__ = "0.0.22"
+__version__ = "0.0.24"
 
 __all__ = [
     "HOME",
@@ -54,6 +55,7 @@ __all__ = [
     "getext",
     "grep",
     "int_to_bytes",
+    "justf",
     "ls",
     "mkdir",
     "neatly",
@@ -1279,6 +1281,29 @@ def timeago(dt):
             count = sec // unit_sec
             return f"{count} {unit}{'s' if count > 1 else ''} ago"
     return "just now"
+
+
+def justf(x, width, align="<", pad=" "):
+    """Adjust the alignment of a given string considering wide characters.
+
+    >>> justf("do not have love, 아무것도", 40, "^", "-")
+    '-------do not have love, 아무것도-------'
+    >>> justf("나에게 사랑이 없으면 I gain nothing", 40, "^", "-")
+    '--나에게 사랑이 없으면 I gain nothing---'
+    """
+
+    def uni(s):
+        return sum(2 if east_asian_width(c) in {"W", "F"} else 1 for c in s)
+
+    d = max(0, width - uni(x))
+    if align == "<":
+        return x + pad * d
+    elif align == ">":
+        return pad * d + x
+    elif align == "^":
+        return pad * (d // 2) + x + pad * (d - d // 2)
+    else:
+        error(f"Error, no such text-justification: {align}")
 
 
 _lock = threading.Lock()
