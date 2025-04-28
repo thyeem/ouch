@@ -13,21 +13,24 @@ import zipfile
 from ast import literal_eval
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
+from dataclasses import fields
 from datetime import datetime
 from glob import glob
 from io import BytesIO, StringIO
 from shutil import rmtree
 from subprocess import DEVNULL, PIPE, STDOUT, Popen
 from textwrap import fill
+from typing import Any, Union, get_args, get_origin
 from unicodedata import east_asian_width
 
 import numpy as np
 from foc import *
 
-__version__ = "0.0.24"
+__version__ = "0.0.25"
 
 __all__ = [
     "HOME",
+    "autocast",
     "basename",
     "base58d",
     "base58e",
@@ -1440,6 +1443,72 @@ def base58d(x):
     for c in x:
         num = num * 58 + _BASE58_CHARS.index(c)
     return int_to_bytes(num)
+
+
+class autocast:
+    """A base class for dataclasses that automatically converts field values
+    to their annotated types"""
+
+    def __post_init__(self):
+        for f in fields(self):
+            v = getattr(self, f.name)
+            if v is None:
+                continue
+            try:
+                T = f.type
+                origin = get_origin(T)
+                if origin is Union:
+                    for arg in get_args(T):
+                        if arg is not type(None):
+                            T = arg
+                            break
+                if T is int:
+                    val = int(v)
+                elif T is float:
+                    val = float(v)
+                elif T is bool:
+                    val = (
+                        v.lower() in ("true", "1", "yes")
+                        if isinstance(v, str)
+                        else bool(v)
+                    )
+                elif T is str:
+                    val = str(v)
+                elif origin is list or T is list:
+                    E = get_args(T)[0] if origin is list and get_args(T) else Any
+                    if not isinstance(v, (list, tuple, set)):
+                        val = [v]
+                    else:
+                        val = []
+                        for item in v:
+                            try:
+                                if E is int:
+                                    val.append(int(item))
+                                elif E is float:
+                                    val.append(float(item))
+                                elif E is bool:
+                                    val.append(
+                                        item.lower() in ("true", "1", "yes")
+                                        if isinstance(item, str)
+                                        else bool(item)
+                                    )
+                                elif E is str:
+                                    val.append(str(item))
+                                else:
+                                    val.append(item)
+                            except (ValueError, TypeError):
+                                val.append(item)
+                elif T is tuple or origin is tuple:
+                    val = tuple(v) if isinstance(v, (list, tuple, set)) else (v,)
+                elif T is set or origin is set:
+                    val = set(v) if isinstance(v, (list, tuple, set)) else {v}
+                elif T is dict or origin is dict:
+                    val = dict(v)
+                else:
+                    val = v
+                setattr(self, f.name, val)
+            except (ValueError, TypeError):
+                error(f"Cannot convert {v} to {f.type} for field '{f.name}'")
 
 
 class dataq:

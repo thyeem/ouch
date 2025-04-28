@@ -73,3 +73,6 @@
 
 # 0.0.24
 - Add `justf`. 
+
+# 0.0.25
+- Add `autocast`. 
