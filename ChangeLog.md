@@ -76,3 +76,6 @@
 
 # 0.0.25
 - Add `autocast`. 
+
+# 0.0.26
+- Update `reader` and `writier` to fully align with `open` and `zipfile`. 

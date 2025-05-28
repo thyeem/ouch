@@ -26,7 +26,7 @@ from unicodedata import east_asian_width
 import numpy as np
 from foc import *
 
-__version__ = "0.0.25"
+__version__ = "0.0.26"
 
 __all__ = [
     "HOME",
@@ -815,23 +815,31 @@ def pbpaste():
     return Popen("pbpaste", stdout=PIPE).stdout.read().decode()
 
 
-def reader(f=None, mode="r", zipf=False):
+def reader(f=None, mode="r", zipf=False, **kwargs):
     """Get ready to read stream from a file or stdin, then returns the handle."""
     if f is not None:
         guard(exists(f, "f"), f"reader, not found such a file: {f}")
     return (
         sys.stdin
         if f is None
-        else zipfile.ZipFile(normpath(f), mode) if zipf else open(normpath(f), mode)
+        else (
+            zipfile.ZipFile(normpath(f), mode=mode, **kwargs)
+            if zipf
+            else open(normpath(f), mode=mode, **kwargs)
+        )
     )
 
 
-def writer(f=None, mode="w", zipf=False):
+def writer(f=None, mode="w", zipf=False, **kwargs):
     """Get ready to write stream to a file or stout, then returns the handle."""
     return (
         sys.stdout
         if f is None
-        else zipfile.ZipFile(normpath(f), mode) if zipf else open(normpath(f), mode)
+        else (
+            zipfile.ZipFile(normpath(f), mode=mode, **kwargs)
+            if zipf
+            else open(normpath(f), mode=mode, **kwargs)
+        )
     )
 
 
