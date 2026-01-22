@@ -79,3 +79,8 @@
 
 # 0.0.26
 - Update `reader` and `writier` to fully align with `open` and `zipfile`. 
+
+# 0.0.27
+- Add `CLI`, Unix style CLI builder.
+- Add `red`, `green`, `yellow`, `blue`, `purple`, and `cyan` functions that wraps text in ANSI colors.
+

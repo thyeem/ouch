@@ -1,3 +1,4 @@
+import argparse
 import builtins as bi
 import multiprocessing
 import operator as op
@@ -26,15 +27,17 @@ from unicodedata import east_asian_width
 import numpy as np
 from foc import *
 
-__version__ = "0.0.26"
+__version__ = "0.0.27"
 
 __all__ = [
     "HOME",
+    "ansicolor",
     "autocast",
     "basename",
     "base58d",
     "base58e",
     "bin_to_bytes",
+    "blue",
     "bytes_to_bin",
     "bytes_to_int",
     "capture",
@@ -46,6 +49,8 @@ __all__ = [
     "chunks_from",
     "chunks_iter",
     "chunks_str",
+    "CLI",
+    "cyan",
     "dataq",
     "dirname",
     "dmap",
@@ -56,6 +61,7 @@ __all__ = [
     "flatl",
     "flatten",
     "getext",
+    "green",
     "grep",
     "int_to_bytes",
     "justf",
@@ -71,6 +77,7 @@ __all__ = [
     "probify",
     "proc",
     "prompt",
+    "purple",
     "pwd",
     "rand",
     "randbytes",
@@ -79,6 +86,7 @@ __all__ = [
     "readchar",
     "read_conf",
     "reader",
+    "red",
     "rmdir",
     "shell",
     "shuffle",
@@ -93,7 +101,36 @@ __all__ = [
     "tracker",
     "write_conf",
     "writer",
+    "yellow",
 ]
+
+
+def ansicolor(code):
+    return lambda x: f"\033[{code}m{x}\033[0m"
+
+
+def red(x):
+    return ansicolor(31)(x)
+
+
+def green(x):
+    return ansicolor(32)(x)
+
+
+def yellow(x):
+    return ansicolor(33)(x)
+
+
+def blue(x):
+    return ansicolor(34)(x)
+
+
+def purple(x):
+    return ansicolor(35)(x)
+
+
+def cyan(x):
+    return ansicolor(36)(x)
 
 
 @fx
@@ -1451,6 +1488,36 @@ def base58d(x):
     for c in x:
         num = num * 58 + _BASE58_CHARS.index(c)
     return int_to_bytes(num)
+
+
+class CLI(argparse.ArgumentParser):
+    """ArgumentParser with Unix-style grouped flags in usage."""
+
+    class _fmt(argparse.HelpFormatter):
+        def _format_action_invocation(self, action):
+            if not action.option_strings:
+                return super()._format_action_invocation(action)
+            parts = ", ".join(action.option_strings)
+            default = self._get_default_metavar_for_optional(action)
+            args_string = self._format_args(action, default)
+            return f"{parts} {args_string}"
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("formatter_class", self._fmt)
+        super().__init__(*args, **kwargs)
+
+    def format_usage(self):
+        usage = super().format_usage()
+        flags = re.findall(r"\[-(\w)\]", usage)
+        if not flags:
+            return usage
+        usage = re.sub(r"\[-\w\]\s*", "", usage)
+        return usage.replace(f"{self.prog} ", f"{self.prog} [-{''.join(flags)}] ", 1)
+
+    def format_help(self):
+        new = self.format_usage()
+        old = super().format_usage()
+        return super().format_help().replace(old, new)
 
 
 class autocast:
