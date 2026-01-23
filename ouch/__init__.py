@@ -27,7 +27,7 @@ from unicodedata import east_asian_width
 import numpy as np
 from foc import *
 
-__version__ = "0.0.27"
+__version__ = "0.0.28"
 
 __all__ = [
     "HOME",
@@ -1493,7 +1493,7 @@ def base58d(x):
 class CLI(argparse.ArgumentParser):
     """ArgumentParser with Unix-style grouped flags in usage."""
 
-    class _fmt(argparse.HelpFormatter):
+    class _formatter(argparse.HelpFormatter):
         def _format_action_invocation(self, action):
             if not action.option_strings:
                 return super()._format_action_invocation(action)
@@ -1503,7 +1503,7 @@ class CLI(argparse.ArgumentParser):
             return f"{parts} {args_string}"
 
     def __init__(self, *args, **kwargs):
-        kwargs.setdefault("formatter_class", self._fmt)
+        kwargs.setdefault("formatter_class", self._formatter)
         super().__init__(*args, **kwargs)
 
     def format_usage(self):
@@ -1518,6 +1518,23 @@ class CLI(argparse.ArgumentParser):
         new = self.format_usage()
         old = super().format_usage()
         return super().format_help().replace(old, new)
+
+    def add_argument(self, *args, show_default=False, **kwargs):
+        if show_default and "help" in kwargs and "default" in kwargs:
+            if kwargs["default"] not in (None, False):
+                kwargs["help"] = f"{kwargs['help']} (default: {kwargs['default']})"
+
+        return super().add_argument(*args, **kwargs)
+
+    def add_solo_argument(self, *flags, callback, **kwargs):
+        class _action(argparse.Action):
+            def __call__(self, cli, args, value, flag=None):
+                callback()
+                cli.exit()
+
+        kwargs["action"] = _action
+        kwargs["nargs"] = 0
+        return self.add_argument(*flags, **kwargs)
 
 
 class autocast:

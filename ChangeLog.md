@@ -84,3 +84,5 @@
 - Add `CLI`, Unix style CLI builder.
 - Add `red`, `green`, `yellow`, `blue`, `purple`, and `cyan` functions that wraps text in ANSI colors.
 
+# 0.0.28
+- Fix `CLI`: `add_solo_argument` method
