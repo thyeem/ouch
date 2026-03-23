@@ -21,13 +21,13 @@ from io import BytesIO, StringIO
 from shutil import rmtree
 from subprocess import DEVNULL, PIPE, STDOUT, Popen
 from textwrap import fill
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin, get_type_hints
 from unicodedata import east_asian_width
 
 import numpy as np
 from foc import *
 
-__version__ = "0.0.28"
+__version__ = "0.0.29"
 
 __all__ = [
     "HOME",
@@ -1539,71 +1539,131 @@ class CLI(argparse.ArgumentParser):
 
 class autocast:
     """A base class for dataclasses that automatically converts field values
-    to their annotated types"""
+    to their annotated types
+
+    >>> from dataclasses import dataclass, field
+    >>> from typing import List, Tuple, Optional, Set
+
+    >>> @dataclass
+    ... class Config(autocast):
+    ...     lr: float = 1e-4
+    ...     epochs: int = 10
+    ...     bias: bool = True
+    ...     name: str = "default"
+    ...     betas: Tuple[float, float] = (0.9, 0.999)
+    ...     tags: List[int] = field(default_factory=list)
+    ...     mode: Optional[str] = None
+
+    >>> c = Config(lr="3e-4", epochs="20", bias="false")
+    >>> c.lr
+    0.0003
+    >>> c.epochs
+    20
+    >>> c.bias
+    False
+
+    >>> c = Config(betas=("0.95", "0.98"))
+    >>> c.betas
+    (0.95, 0.98)
+
+    >>> c = Config(tags=["1", "2", "3"])
+    >>> c.tags
+    [1, 2, 3]
+
+    >>> c = Config(tags="42")
+    >>> c.tags
+    [42]
+
+    >>> c = Config(mode=None)
+    >>> c.mode is None
+    True
+
+    >>> Config(lr="not-a-number")
+    Traceback (most recent call last):
+    ...
+    ValueError: autocast: lr: could not convert string to float: 'not-a-number'
+    """
+
+    _BOOL_TRUE = frozenset({"true", "1", "yes", "y", "on"})
 
     def __post_init__(self):
+        hints = get_type_hints(type(self))
         for f in fields(self):
             v = getattr(self, f.name)
             if v is None:
                 continue
             try:
-                T = f.type
-                origin = get_origin(T)
-                if origin is Union:
-                    for arg in get_args(T):
-                        if arg is not type(None):
-                            T = arg
-                            break
-                if T is int:
-                    val = int(v)
-                elif T is float:
-                    val = float(v)
-                elif T is bool:
-                    val = (
-                        v.lower() in ("true", "1", "yes")
-                        if isinstance(v, str)
-                        else bool(v)
-                    )
-                elif T is str:
-                    val = str(v)
-                elif origin is list or T is list:
-                    E = get_args(T)[0] if origin is list and get_args(T) else Any
-                    if not isinstance(v, (list, tuple, set)):
-                        val = [v]
-                    else:
-                        val = []
-                        for item in v:
-                            try:
-                                if E is int:
-                                    val.append(int(item))
-                                elif E is float:
-                                    val.append(float(item))
-                                elif E is bool:
-                                    val.append(
-                                        item.lower() in ("true", "1", "yes")
-                                        if isinstance(item, str)
-                                        else bool(item)
-                                    )
-                                elif E is str:
-                                    val.append(str(item))
-                                else:
-                                    val.append(item)
-                            except (ValueError, TypeError):
-                                val.append(item)
-                elif T is tuple or origin is tuple:
-                    val = tuple(v) if isinstance(v, (list, tuple, set)) else (v,)
-                elif T is set or origin is set:
-                    val = set(v) if isinstance(v, (list, tuple, set)) else {v}
-                elif T is dict or origin is dict:
-                    val = dict(v)
-                else:
-                    val = v
-                setattr(self, f.name, val)
-            except (ValueError, TypeError):
-                error(f"Cannot convert {v} to {f.type} for field '{f.name}'")
+                setattr(self, f.name, self._cast(v, hints[f.name]))
+            except Exception as e:
+                error(f"autocast: {f.name}: {e}", e=type(e))
+
+    @staticmethod
+    def _cast(v, T):
+        origin = get_origin(T)
+        args = get_args(T)
+
+        if origin is Union:  # Optional[X] / Union[X, None] -> unwrap
+            real = [a for a in args if a is not type(None)]
+            if real:
+                T, origin, args = real[0], get_origin(real[0]), get_args(real[0])
+
+        if T is bool:
+            return v.lower() in autocast._BOOL_TRUE if isinstance(v, str) else bool(v)
+        if T is int:
+            return int(v)
+        if T is float:
+            return float(v)
+        if T is str:
+            return str(v)
+
+        if origin is list or T is list:  # list[E]
+            E = args[0] if args else Any
+            items = v if isinstance(v, (list, tuple, set)) else [v]
+            return [autocast._cast(i, E) for i in items]
+
+        if origin is tuple or T is tuple:  # Tuple[X, Y, ...]
+            if isinstance(v, (list, tuple)):
+                if args:
+                    return tuple(autocast._cast(vi, Ti) for vi, Ti in zip(v, args))
+                return tuple(v)
+            return (v,)
+
+        if origin is set or T is set:  # set{E}
+            E = args[0] if args else Any
+            items = v if isinstance(v, (list, tuple, set)) else [v]
+            return {autocast._cast(i, E) for i in items}
+
+        if origin is dict or T is dict:  # dict
+            return dict(v) if not isinstance(v, dict) else v
+
+        if (
+            isinstance(v, dict)
+            and isinstance(T, type)
+            and hasattr(T, "__dataclass_fields__")
+        ):  # nested dataclass
+            return T(**v)
+        return v
 
 
 class dataq:
+    """Fixed-size sliding window with live statistics.
+    >>> q = dataq([1, 2, 3, 4, 5])
+    >>> q.mean
+    3.0
+    >>> q.median
+    3.0
+    >>> q.sum
+    15
+    >>> q.minmax
+    (1, 5)
+
+    >>> q = dataq()
+    >>> q.mean
+    nan
+    >>> q.sum
+    nan
+    """
+
     def __init__(self, x=100):
         data = _ns_builtin_iterp(x)
         self.n = op.length_hint(x) if data else x
@@ -1648,122 +1708,251 @@ class dataq:
 
     @nan
     def percentile(self, q):
+        """
+        >>> dataq([1, 2, 3, 4, 5]).percentile(50)
+        3.0
+        """
         return np.percentile(self.cache, q)
 
     @nan
     def quantile(self, q):
+        """
+        >>> dataq([1, 2, 3, 4, 5]).quantile(0.5)
+        3.0
+        """
         return np.quantile(self.cache, q)
 
     @property
+    @nan
     def q1(self):
+        """
+        >>> dataq([1, 2, 3, 4, 5]).q1
+        2.0
+        """
         return np.percentile(self.cache, 25)
 
     @property
     @nan
     def median(self):
+        """
+        >>> dataq([1, 2, 3, 4]).median
+        2.5
+        """
         return np.median(self.cache)
 
     @property
+    @nan
     def q3(self):
+        """
+        >>> dataq([1, 2, 3, 4, 5]).q3
+        4.0
+        """
         return np.percentile(self.cache, 75)
 
     @property
+    @nan
     def iqr(self):
+        """
+        >>> dataq([1, 2, 3, 4, 5]).iqr
+        2.0
+        """
         return self.q3 - self.q1
 
     @property
     @nan
     def quartile(self):
+        """
+        >>> list(dataq([1, 2, 3, 4, 5]).quartile)
+        [2.0, 3.0, 4.0]
+        """
         return np.percentile(self.cache, [25, 50, 75])
 
     @property
     @nan
     def mad(self):
+        """
+        >>> dataq([1, 2, 3, 4, 5]).mad
+        1.0
+        """
         return np.median(np.abs(self.cache - self.median))
 
     @property
     @nan
     def mean(self):
+        """
+        >>> dataq([1, 2, 3]).mean
+        2.0
+        """
         return np.mean(self.cache)
 
     @property
     @nan
     def var(self):
+        """
+        >>> dataq([1, 2, 3]).var
+        0.6666666666666666
+        """
         return np.var(self.cache)
 
     @property
     @nan
     def std(self):
+        """
+        >>> round(dataq([1, 2, 3]).std, 10)
+        0.8164965809
+        """
         return np.std(self.cache)
 
     @property
     @nan
     def muad(self):
+        """
+        >>> round(dataq([1, 2, 3]).muad, 10)
+        0.6666666667
+        """
         return np.mean(np.abs(self.cache - self.mean))
 
     @property
     @nan
     def cv(self):
+        """
+        >>> round(dataq([1, 2, 3]).cv, 10)
+        0.4082482905
+        """
         return self.std / self.mean
 
     @property
     @nan
     def hmean(self):
-        if np.any(self.cache < 0):
+        """
+        >>> round(dataq([2, 4]).hmean, 10)
+        2.6666666667
+        >>> dataq([0, 1, 2]).hmean
+        nan
+        """
+        if np.any(self.cache <= 0):
             return float("nan")
         return len(self) / np.sum(1 / self.cache)
 
     @property
     @nan
     def gmean(self):
-        if np.any(self.cache < 0):
+        """
+        >>> round(dataq([2, 8]).gmean, 6)
+        4.0
+        >>> dataq([0, 1, 2]).gmean
+        nan
+        """
+        if np.any(self.cache <= 0):
             return float("nan")
         return np.exp(np.mean(np.log(self.cache)))
 
     @property
     @nan
     def skew(self):
-        return np.mean((self.cache - self.mean) ** 3) / (self.std**3)
+        """
+        >>> dataq([1, 1, 1]).skew
+        nan
+        >>> round(dataq([1, 2, 3, 4, 100]).skew, 4)
+        2.1524
+        """
+        s = self.std
+        if s == 0:
+            return float("nan")
+        return np.mean((self.cache - self.mean) ** 3) / (s**3)
 
     @property
     @nan
     def kurtosis(self):
-        return np.mean((self.cache - self.mean) ** 4) / (self.std**4) - 3
+        """
+        >>> dataq([1, 1, 1]).kurtosis
+        nan
+        >>> round(dataq([1, 2, 3, 4, 100]).kurtosis, 4)
+        2.6932
+        """
+        s = self.std
+        if s == 0:
+            return float("nan")
+        return np.mean((self.cache - self.mean) ** 4) / (s**4) - 3
 
     @property
     @nan
     def min(self):
+        """
+        >>> dataq([3, 1, 2]).min
+        1.0
+        """
         return np.min(self.cache)
 
     @property
     @nan
     def max(self):
+        """
+        >>> dataq([3, 1, 2]).max
+        3.0
+        """
         return np.max(self.cache)
 
     @property
     @nan
     def minmax(self):
+        """
+        >>> dataq([3, 1, 2]).minmax
+        (1.0, 3.0)
+        """
         return self.min, self.max
 
     @property
-    def sort(self):
-        return np.sort(self.cache)
-
-    @property
+    @nan
     def sum(self):
+        """
+        >>> dataq([1, 2, 3]).sum
+        6.0
+        """
         return np.sum(self.cache)
 
     @property
-    def cumsum(self):
-        return np.cumsum(self.sort)
-
-    @property
+    @nan
     def prod(self):
+        """
+        >>> dataq([2, 3, 4]).prod
+        24.0
+        """
         return np.prod(self.cache)
 
-    @property
+    @nan
+    def sort(self):
+        """
+        >>> list(dataq([3, 1, 2]).sort())
+        [1.0, 2.0, 3.0]
+        """
+        return np.sort(self.cache)
+
+    @nan
+    def cumsum(self):
+        """
+        >>> list(dataq([3, 1, 2]).cumsum())
+        [1.0, 3.0, 6.0]
+        """
+        return np.cumsum(self.sort())
+
+    @nan
     def cumprod(self):
-        return np.cumprod(self.sort)
+        """
+        >>> list(dataq([3, 1, 2]).cumprod())
+        [1.0, 2.0, 6.0]
+        """
+        return np.cumprod(self.sort())
+
+    @nan
+    def zscore(self):
+        """
+        >>> list(dataq([1, 2, 3]).zscore())  # doctest: +SKIP
+        """
+        s = self.std
+        if s == 0:
+            return np.full(len(self), float("nan"))
+        return (self.cache - self.mean) / s
 
     def describe(self, as_dict=False):
         return dmap(

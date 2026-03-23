@@ -86,3 +86,6 @@
 
 # 0.0.28
 - Fix `CLI`: `add_solo_argument` method
+
+# 0.0.29
+- Fix `autocast` and `dataq`
