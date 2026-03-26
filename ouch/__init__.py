@@ -27,7 +27,7 @@ from unicodedata import east_asian_width
 import numpy as np
 from foc import *
 
-__version__ = "0.0.29"
+__version__ = "0.0.30"
 
 __all__ = [
     "HOME",
@@ -472,38 +472,54 @@ def pp(d, width=200, sort=True, show=5, gap=1, quote=False, margin=None):
     )
 
 
-@fx
-def tabulate(rows, nohead=False, style="plain", missing="", fn=id):
+def _uni(s):
+    return sum(2 if east_asian_width(c) in {"W", "F"} else 1 for c in s)
+
+
+def tabulate(rows, header=None, style="plain", missing="", align=None):
     """Create a formatted table from data.
 
-     nohead | first row of ``rows`` is used as head unless ``nohead``
+     header | column headers; if None, no header is shown
       style | {"plain", "markdown", "org", "grid"}
     missing | placeholder for missing data (``None``)
-       fn   | a function that finalizes each row
+      align | column alignment: "<" left, ">" right, "^" center.
+            | a single string applied to all columns or
+            | a list of strings for per-column control.
 
-    >>> data = [['Name', 'Age'], ['Sofia', 9], ['Maria', 7]]
-    >>> print(tabulate(data, style='grid'))
-    +-------+-----+
-    | Name  | Age |
-    +=======+=====+
-    | Sofia | 9   |
-    +-------+-----+
-    | Maria | 7   |
-    +-------+-----+
+     >>> body = [['Sofia', 9], ['Maria', 7]]
+     >>> print(tabulate(body, header=['Name', 'Age'], style='grid'))
+     +-------+-----+
+     | Name  | Age |
+     +=======+=====+
+     | Sofia | 9   |
+     +-------+-----+
+     | Maria | 7   |
+     +-------+-----+
+
+     >>> print(tabulate(body, header=['Name', 'Age'], style='grid', align=['^', '>']))
+     +-------+-----+
+     | Name  | Age |
+     +=======+=====+
+     | Sofia |   9 |
+     +-------+-----+
+     | Maria |   7 |
+     +-------+-----+
     """
 
-    def cell(c, w, missing):
-        return f"{str(c) if c is not None else missing:<{w}}"
+    def cell(c, w, missing, align, pad=" "):
+        s = str(c) if c is not None else missing
+        return justf(s, w, align, pad)
 
-    def row(r, ws, sep, missing):
-        return sep.join(cell(c, w, missing) for c, w in zip(r, ws))
+    def row(r, ws, sep, missing, aligns):
+        return sep.join(cell(c, w, missing, a) for c, w, a in zip(r, ws, aligns))
 
     def separator(l, s, m, r, ws):
         return l + s.join(m * w for w in ws) + r
 
+    all_rows = [header] + list(rows) if header is not None else list(rows)
     guard(
-        rows | map(length) | fx(set) | length == 1,
-        "error, either empty rows or not all rows have the same length.",
+        all_rows | map(length) | fx(set) | length == 1,
+        "error, column count mismatch.",
     )
     sty = dmap(
         grid=dict(
@@ -536,23 +552,31 @@ def tabulate(rows, nohead=False, style="plain", missing="", fn=id):
         f"Error, unsupported border style: '{style}'.\n"
         "Options are 'grid', 'markdown', 'org', and 'plain'."
     )
-    ws = [  # [maximum-of-each-coloum-width]
-        max(len(str(c) if c is not None else missing) for c in col)
-        for col in zip(*rows)
+    ws = [
+        max(_uni(str(c) if c is not None else missing) for c in col)
+        for col in zip(*all_rows)
     ]
-    fmt_rows = [row(r, ws, sty.sep, missing) for r in rows]
+    n_cols = len(ws)
+    if align is None or isinstance(align, str):
+        aligns = ["<"] * n_cols if align is None else [align] * n_cols
+    else:
+        guard(len(align) == n_cols, "error, column count mismatch.")
+        aligns = list(align)
+    fmt_rows = [row(r, ws, sty.sep, missing, aligns) for r in rows]
     o = []
     if sty.top:
         o.append(sty.top(ws))
-    if not nohead:
-        o.append(sty.left + head(fmt_rows) + sty.right)
+    if header is not None:
+        o.append(
+            sty.left + row(header, ws, sty.sep, missing, ["^"] * n_cols) + sty.right
+        )
         if sty.header:
             o.append(sty.header(ws))
-    for r in fmt_rows if nohead else tail(fmt_rows):
+    for r in fmt_rows:
         o.append(sty.left + r + sty.right)
         if sty.middle:
             o.append(sty.middle(ws))
-    return "\n".join(map(fn, o))
+    return "\n".join(o)
 
 
 def HOME():
@@ -1339,11 +1363,7 @@ def justf(x, width, align="<", pad=" "):
     >>> justf("나에게 사랑이 없으면 I gain nothing", 40, "^", "-")
     '--나에게 사랑이 없으면 I gain nothing---'
     """
-
-    def uni(s):
-        return sum(2 if east_asian_width(c) in {"W", "F"} else 1 for c in s)
-
-    d = max(0, width - uni(x))
+    d = max(0, width - _uni(x))
     if align == "<":
         return x + pad * d
     elif align == ">":

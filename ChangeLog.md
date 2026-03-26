@@ -89,3 +89,7 @@
 
 # 0.0.29
 - Fix `autocast` and `dataq`
+
+# 0.0.30
+- Fix `tabulate` and `jsutf`
+
