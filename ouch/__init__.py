@@ -24,10 +24,15 @@ from textwrap import fill
 from typing import Any, Union, get_args, get_origin, get_type_hints
 from unicodedata import east_asian_width
 
-import numpy as np
 from foc import *
+import numpy as np
 
-__version__ = "0.0.30"
+try:
+    np.set_printoptions(legacy="1.25")
+except TypeError:
+    pass
+
+__version__ = "0.0.31"
 
 __all__ = [
     "HOME",
@@ -99,6 +104,7 @@ __all__ = [
     "timestamp",
     "tmpfile",
     "tracker",
+    "trimu",
     "write_conf",
     "writer",
     "yellow",
@@ -406,7 +412,7 @@ def neatly(d, width=200, sort=True, show=5, gap=1, quote=False, margin=None):
             filln(
                 ln,
                 f"{('' if i else k):>{margin}}{__}",
-                f"{' ':>{margin+2*gap+1}}",
+                f"{' ':>{margin + 2 * gap + 1}}",
             )
             for k, v in (sorted if sort else id)(d.items())
             for i, ln in enumerate(
@@ -1111,7 +1117,11 @@ def probify(fn, p=0.5):
         return (
             fn(*args, **kwargs)
             if rand() < p
-            else None if not args else args[0] if len(args) == 1 else tuple(args)
+            else None
+            if not args
+            else args[0]
+            if len(args) == 1
+            else tuple(args)
         )
 
     return go
@@ -1372,6 +1382,25 @@ def justf(x, width, align="<", pad=" "):
         return pad * (d // 2) + x + pad * (d - d // 2)
     else:
         error(f"Error, no such text-justification: {align}")
+
+
+def trimu(x, width):
+    """Trim a string to a specified width considering wide characters.
+
+    >>> trimu("나에게 사랑이 없으면 I gain nothing", 10)
+    '나에게 사'
+    >>> trimu("do not have love, 아무것도", 22)
+    'do not have love, 아무'
+    """
+    cur = 0
+    trimmed = ""
+    for c in x:
+        w = _uni(c)
+        if cur + w > width:
+            break
+        trimmed += c
+        cur += w
+    return trimmed
 
 
 _lock = threading.Lock()

@@ -93,3 +93,5 @@
 # 0.0.30
 - Fix `tabulate` and `jsutf`
 
+# 0.0.31
+- Add `trimu`
