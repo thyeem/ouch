@@ -32,7 +32,7 @@ try:
 except TypeError:
     pass
 
-__version__ = "0.0.31"
+__version__ = "0.0.32"
 
 __all__ = [
     "HOME",
@@ -1670,9 +1670,12 @@ class autocast:
             items = v if isinstance(v, (list, tuple, set)) else [v]
             return [autocast._cast(i, E) for i in items]
 
-        if origin is tuple or T is tuple:  # Tuple[X, Y, ...]
+        if origin is tuple or T is tuple:  # tuple(X, Y) | tuple[X, ...]
             if isinstance(v, (list, tuple)):
                 if args:
+                    if args[-1] is Ellipsis:
+                        e = args[0]
+                        return tuple(autocast._cast(vi, e) for vi in v)
                     return tuple(autocast._cast(vi, Ti) for vi, Ti in zip(v, args))
                 return tuple(v)
             return (v,)

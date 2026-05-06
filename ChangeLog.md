@@ -95,3 +95,6 @@
 
 # 0.0.31
 - Add `trimu`
+
+# 0.0.32
+- feat: support variable-length tuples in `autocast`
